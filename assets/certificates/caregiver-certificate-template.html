@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Caregiver Certificate</title>
+    <style>
+      @page {
+        size: A4 landscape;
+        margin: 0;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Times New Roman", Georgia, serif;
+        color: #2f3338;
+        background: #f7f6f4;
+      }
+
+      .page {
+        position: relative;
+        width: 297mm;
+        height: 210mm;
+        margin: 0;
+        padding: 18mm 18mm 14mm;
+        border: 4px solid #d8c59f;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(216, 197, 159, 0.16), transparent 40%),
+          radial-gradient(circle at 80% 80%, rgba(216, 197, 159, 0.14), transparent 42%),
+          #f7f6f4;
+      }
+
+      .corner {
+        position: absolute;
+        width: 30mm;
+        height: 30mm;
+        border-color: #d8c59f;
+        border-style: solid;
+        opacity: 0.9;
+      }
+
+      .corner.tl {
+        left: 6mm;
+        top: 6mm;
+        border-width: 2.4mm 0 0 2.4mm;
+      }
+
+      .corner.tr {
+        right: 6mm;
+        top: 6mm;
+        border-width: 2.4mm 2.4mm 0 0;
+      }
+
+      .corner.bl {
+        left: 6mm;
+        bottom: 6mm;
+        border-width: 0 0 2.4mm 2.4mm;
+      }
+
+      .corner.br {
+        right: 6mm;
+        bottom: 6mm;
+        border-width: 0 2.4mm 2.4mm 0;
+      }
+
+      .header {
+        margin-top: 8mm;
+        text-align: center;
+        letter-spacing: 0.4px;
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 12.5pt;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .header h2 {
+        margin: 0;
+        font-size: 12pt;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .subtitle {
+        margin-top: 10mm;
+        text-align: center;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 8.2pt;
+        line-height: 1.35;
+        font-weight: 700;
+      }
+
+      .name-wrap {
+        margin-top: 12mm;
+        text-align: center;
+      }
+
+      .name {
+        display: inline-block;
+        min-width: 180mm;
+        padding: 2.6mm 4mm;
+        border-top: 1px solid #d2d2d2;
+        border-bottom: 1px solid #d2d2d2;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 23pt;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.9px;
+        color: #1f2329;
+        background: rgba(240, 240, 240, 0.65);
+      }
+
+      .body {
+        margin: 7mm auto 0;
+        width: 190mm;
+        text-align: center;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 9pt;
+        line-height: 1.34;
+        color: #2f3338;
+      }
+
+      .meta {
+        margin-top: 4mm;
+        font-size: 8pt;
+      }
+
+      .divider {
+        margin: 8mm auto 2mm;
+        width: 230mm;
+        height: 0;
+        border-top: 1px solid #3d3d3d;
+      }
+
+      .signatures {
+        margin-top: 2.2mm;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32mm;
+        align-items: start;
+        text-align: center;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      .sig-line {
+        height: 0;
+        border-top: 1px solid #3d3d3d;
+        margin-bottom: 2.5mm;
+      }
+
+      .sig-name {
+        font-size: 9pt;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .sig-role {
+        margin-top: 1mm;
+        font-size: 8.1pt;
+        color: #595d63;
+      }
+
+      .bottom-center {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 8mm;
+        text-align: center;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 7.5pt;
+        color: #6a6f76;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+
+      <header class="header">
+        <h1>Caregiver Certification Certificate</h1>
+        <h2>Certificat de Certification des Aidants</h2>
+      </header>
+
+      <section class="subtitle">
+        Certified through Quiz Assessment and Organization-Based Practical Stage<br />
+        Certifie par evaluation et stage pratique supervise
+      </section>
+
+      <section class="name-wrap">
+        <div class="name">{{FULL_NAME}}</div>
+      </section>
+
+      <section class="body">
+        This certifies that the above-named individual has successfully completed the CogniCare caregiver
+        certification pathway, including required knowledge assessments and supervised practical stage.
+        <div class="meta">
+          Quiz Score: {{QUIZ_SCORE}} | Organization: {{ORGANIZATION}}<br />
+          Certificate ID: {{CERTIFICATE_ID}} | Issue Date: {{ISSUE_DATE}}
+        </div>
+      </section>
+
+      <div class="divider"></div>
+
+      <section class="signatures">
+        <div>
+          <div class="sig-line"></div>
+          <div class="sig-name">{{SUPERVISOR_NAME}}</div>
+          <div class="sig-role">Organization Supervisor</div>
+        </div>
+        <div>
+          <div class="sig-line"></div>
+          <div class="sig-name">{{AUTHORITY_NAME}}</div>
+          <div class="sig-role">CogniCare Certification Authority</div>
+        </div>
+      </section>
+
+      <div class="bottom-center">Generated by CogniCare</div>
+    </div>
+  </body>
+</html>

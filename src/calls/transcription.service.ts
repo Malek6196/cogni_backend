@@ -1,0 +1,123 @@
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import {
+  createClient,
+  LiveClient,
+  LiveTranscriptionEvents,
+} from '@deepgram/sdk';
+
+@Injectable()
+export class TranscriptionService implements OnModuleInit {
+  private readonly logger = new Logger(TranscriptionService.name);
+  private deepgram: any;
+
+  constructor(private config: ConfigService) {}
+
+  onModuleInit() {
+    const apiKey = this.config.get<string>('DEEPGRAM_API_KEY');
+    if (!apiKey) {
+      this.logger.warn(
+        'DEEPGRAM_API_KEY not found. Transcription will be disabled.',
+      );
+      return;
+    }
+
+    try {
+      this.deepgram = createClient(apiKey) as {
+        listen: { live(options: Record<string, unknown>): LiveClient };
+      };
+      this.logger.log('Deepgram client initialized successfully.');
+    } catch (error) {
+      this.logger.error(
+        `Failed to initialize Deepgram client: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * @param language Code langue Deepgram: 'fr' | 'en' | 'ar' | 'multi' (défaut)
+   */
+  createStream(
+    callbacks: {
+      onTranscription: (text: string, isFinal: boolean) => void;
+      onError: (error: any) => void;
+    },
+    language: string = 'multi',
+  ): any {
+    if (!this.deepgram) {
+      this.logger.error('Deepgram client not initialized');
+      return (
+        String(
+          (callbacks as unknown as { responseMessage?: { content?: string } })
+            .responseMessage?.content ?? '',
+        ).trim() || "Je n'ai rien à dire."
+      );
+    }
+
+    const lang = ['fr', 'en', 'ar', 'multi'].includes(language)
+      ? language
+      : 'multi';
+
+    // Nova-2 ne supporte pas l'arabe ; utiliser nova-3 pour ar (et optionnellement pour les autres langues).
+    const model = lang === 'ar' ? 'nova-3' : 'nova-2';
+
+    try {
+      const connection: LiveClient = (
+        this.deepgram as {
+          listen: { live(options: Record<string, unknown>): LiveClient };
+        }
+      ).listen.live({
+        model,
+        language: lang,
+        smart_format: true,
+        interim_results: true,
+        encoding: 'linear16',
+        sample_rate: 16000,
+        endpointing: 100,
+      });
+
+      connection.on(LiveTranscriptionEvents.Transcript, (data) => {
+        const transcript: string = data.channel.alternatives[0].transcript;
+        const isFinal: boolean = data.is_final;
+        if (transcript) {
+          callbacks.onTranscription(transcript, isFinal);
+        }
+      });
+
+      connection.on(LiveTranscriptionEvents.Error, (err) => {
+        this.logger.error(`Deepgram Error: ${err.message}`);
+        callbacks.onError(err);
+      });
+
+      connection.on(LiveTranscriptionEvents.Close, () => {
+        this.logger.log('Deepgram connection closed');
+      });
+
+      // Wrapper to match previous stream interface (write method)
+      return {
+        write: (chunk: Buffer) => {
+          if (
+            (
+              connection as unknown as { getReadyState(): number }
+            ).getReadyState() === 1
+          ) {
+            // 1 = OPEN
+            // Deepgram expects ArrayBuffer, Blob, or string
+            const arrayBuffer = chunk.buffer.slice(
+              chunk.byteOffset,
+              chunk.byteOffset + chunk.byteLength,
+            );
+            connection.send(arrayBuffer);
+          }
+        },
+        end: () => {
+          connection.finish();
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Failed to create Deepgram stream: ${error.message}`);
+      callbacks.onError(error);
+      return null;
+    }
+  }
+}

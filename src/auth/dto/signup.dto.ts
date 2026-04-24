@@ -1,0 +1,104 @@
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsEnum,
+  MinLength,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class SignupDto {
+  @ApiProperty({
+    description: "User's full name",
+    example: 'John Doe',
+    minLength: 1,
+  })
+  @IsNotEmpty()
+  @IsString()
+  fullName!: string;
+
+  @ApiProperty({
+    description: "User's email address",
+    example: 'john.doe@example.com',
+    format: 'email',
+  })
+  @IsNotEmpty()
+  @IsEmail()
+  email!: string;
+
+  @ApiPropertyOptional({
+    description: "User's phone number",
+    example: '+1234567890',
+  })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiProperty({
+    description: "User's password (minimum 6 characters)",
+    example: 'securePassword123',
+    minLength: 6,
+  })
+  @IsNotEmpty()
+  @IsString()
+  @MinLength(6)
+  password!: string;
+
+  @ApiProperty({
+    description:
+      "User's role: Family Member, Care Provider, or Organization Leader. Care Provider sub-type is chosen after signup.",
+    example: 'family',
+    enum: ['family', 'careProvider', 'organization_leader'],
+  })
+  @IsNotEmpty()
+  @IsEnum(['family', 'careProvider', 'organization_leader'])
+  role!: 'family' | 'careProvider' | 'organization_leader';
+
+  @ApiPropertyOptional({
+    description:
+      'Organization name (required when role is organization_leader)',
+    example: 'Care Plus Association',
+  })
+  @IsOptional()
+  @IsString()
+  organizationName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Organization description (optional for organization_leader)',
+    example: 'Non-profit supporting families.',
+  })
+  @IsOptional()
+  @IsString()
+  organizationDescription?: string;
+
+  @ApiPropertyOptional({
+    description: "User's location (address or city)",
+    example: 'Ariana, Tunisie',
+  })
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @ApiPropertyOptional({ description: 'Latitude of user location' })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  locationLat?: number;
+
+  @ApiPropertyOptional({ description: 'Longitude of user location' })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  locationLng?: number;
+
+  @ApiProperty({
+    description: '6-digit verification code sent to email',
+    example: '123456',
+  })
+  @IsNotEmpty()
+  @IsString()
+  verificationCode!: string;
+}

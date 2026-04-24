@@ -1,0 +1,191 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document, Types } from 'mongoose';
+
+export type UserDocument = User & Document;
+
+@Schema({ timestamps: true })
+export class User {
+  @Prop({ required: true })
+  fullName!: string;
+
+  @Prop({ required: true, unique: true })
+  email!: string;
+
+  @Prop()
+  phone?: string;
+
+  @Prop({ required: true })
+  passwordHash!: string;
+
+  @Prop()
+  appleUserId?: string;
+
+  @Prop()
+  googleUserId?: string;
+
+  @Prop({
+    required: true,
+    index: true,
+    enum: [
+      'family',
+      'careProvider',
+      'doctor',
+      'volunteer',
+      'admin',
+      'organization_leader',
+      'psychologist',
+      'speech_therapist',
+      'occupational_therapist',
+      'other',
+    ],
+  })
+  role!:
+    | 'family'
+    | 'careProvider'
+    | 'doctor'
+    | 'volunteer'
+    | 'admin'
+    | 'organization_leader'
+    | 'psychologist'
+    | 'speech_therapist'
+    | 'occupational_therapist'
+    | 'other';
+
+  /**
+   * When role is careProvider: specific type chosen after signup.
+   * speech_therapist | occupational_therapist | psychologist | doctor | ergotherapist | caregiver | organization_leader | other
+   */
+  @Prop({
+    enum: [
+      'speech_therapist',
+      'occupational_therapist',
+      'psychologist',
+      'doctor',
+      'ergotherapist',
+      'caregiver',
+      'organization_leader',
+      'other',
+    ],
+  })
+  careProviderType?:
+    | 'speech_therapist'
+    | 'occupational_therapist'
+    | 'psychologist'
+    | 'doctor'
+    | 'ergotherapist'
+    | 'caregiver'
+    | 'organization_leader'
+    | 'other';
+
+  /**
+   * Optional specialty (e.g. area of expertise for healthcare providers).
+   */
+  @Prop()
+  specialty?: string;
+
+  @Prop({ type: 'ObjectId', ref: 'Organization' })
+  organizationId?: string;
+
+  @Prop({ type: 'ObjectId', ref: 'User' })
+  specialistId?: string;
+
+  @Prop()
+  profilePic?: string;
+
+  @Prop()
+  refreshToken?: string;
+
+  @Prop()
+  passwordResetCode?: string;
+
+  @Prop()
+  passwordResetExpires?: Date;
+
+  @Prop()
+  childPlayLockPasswordHash?: string;
+
+  @Prop()
+  childPlayLockPasswordResetCode?: string;
+
+  @Prop()
+  childPlayLockPasswordResetExpires?: Date;
+
+  @Prop()
+  emailChangeCode?: string;
+
+  @Prop()
+  emailChangeExpires?: Date;
+
+  @Prop()
+  pendingEmail?: string;
+
+  /** Last time the user was active (login or presence ping). Used for "online" status. */
+  @Prop()
+  lastSeenAt?: Date;
+
+  /** User IDs that this user has blocked (no messages, no new conversation). */
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  blockedUserIds?: Types.ObjectId[];
+
+  @Prop({ default: true })
+  isConfirmed!: boolean;
+
+  @Prop()
+  confirmationToken?: string;
+
+  /** Metadata for tracking who added the user (for families/staff) */
+  @Prop({ type: 'ObjectId', ref: 'Organization' })
+  addedByOrganizationId?: string;
+
+  @Prop({ type: 'ObjectId', ref: 'User' })
+  addedBySpecialistId?: string;
+
+  @Prop({ type: 'ObjectId', ref: 'User' })
+  lastModifiedBy?: string;
+
+  /** Timestamp for soft delete */
+  @Prop()
+  deletedAt?: Date;
+
+  /** Localisation de l'utilisateur (adresse texte, ex. ville ou adresse complète). */
+  @Prop()
+  location?: string;
+
+  @Prop()
+  locationLat?: number;
+
+  @Prop()
+  locationLng?: number;
+
+  /** Cabinet / bureau en Tunisie — pour la carte famille (professionnels de santé). */
+  @Prop()
+  officeAddress?: string;
+
+  @Prop()
+  officeCity?: string;
+
+  @Prop()
+  officeLat?: number;
+
+  @Prop()
+  officeLng?: number;
+
+  /** Specialist AI preferences: focusPlanTypes, summaryLength, weights, etc. */
+  @Prop({ type: Object })
+  specialistAIPreferences?: {
+    focusPlanTypes?: string[];
+    summaryLength?: 'short' | 'detailed';
+    frequency?: 'every_session' | 'weekly';
+    /** Weights per plan type (e.g. { PECS: 1.2, TEACCH: 1.0 }). Higher = more emphasis in AI output. */
+    planTypeWeights?: Record<string, number>;
+  };
+
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export const UserSchema = SchemaFactory.createForClass(User);
+
+UserSchema.index({ role: 1, fullName: 1 });
+UserSchema.index({ organizationId: 1, role: 1, deletedAt: 1 });
+UserSchema.index({ organizationId: 1, fullName: 1 });

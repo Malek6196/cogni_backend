@@ -1,0 +1,847 @@
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Body,
+  Delete,
+  Param,
+  UseGuards,
+  Request,
+  HttpStatus,
+  HttpCode,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBody,
+  ApiBearerAuth,
+  ApiConsumes,
+} from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { AuthService } from './auth.service';
+import { SignupDto } from './dto/signup.dto';
+import { LoginDto } from './dto/login.dto';
+import { SocialLoginDto } from './dto/social-login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import {
+  ForgotPasswordDto,
+  VerifyResetCodeDto,
+  ResetPasswordDto,
+} from './dto/forgot-password.dto';
+import {
+  SendVerificationCodeDto,
+  VerifyEmailCodeDto,
+} from './dto/verify-email.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { CompleteProfileDto } from './dto/complete-profile.dto';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { Public } from './decorators/public.decorator';
+import { ErrorResponseDto } from '../common/dto/error-response.dto';
+import {
+  assertAllowedImageMime,
+  assertUploadPresent,
+  assertUploadSize,
+  normalizeMimeType,
+  UPLOAD_LIMITS,
+} from '../common/upload/upload-policy';
+import {
+  buildImageUploadOptions,
+  buildPdfUploadOptions,
+} from '../common/upload/multer-upload-options';
+
+@ApiTags('auth')
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('send-verification-code')
+  @Throttle({ default: { limit: 3, ttl: 60000 } }) // 3 requests per minute
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Send email verification code',
+    description:
+      'Send a 6-digit verification code to the email address for signup verification',
+  })
+  @ApiBody({ type: SendVerificationCodeDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Verification code sent successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          example: 'Verification code sent to your email',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: 'User with this email already exists',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.TOO_MANY_REQUESTS,
+    description: 'Too many requests',
+    type: ErrorResponseDto,
+  })
+  async sendVerificationCode(
+    @Body() sendVerificationCodeDto: SendVerificationCodeDto,
+  ) {
+    await this.authService.sendVerificationCode(sendVerificationCodeDto.email);
+    return { message: 'Verification code sent to your email' };
+  }
+
+  @Post('verify-email-code')
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 requests per minute
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Verify email with code',
+    description: 'Verify the email address using the code sent via email',
+  })
+  @ApiBody({ type: VerifyEmailCodeDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Email verified successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Email verified successfully' },
+        verified: { type: 'boolean', example: true },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid or expired verification code',
+    type: ErrorResponseDto,
+  })
+  async verifyEmailCode(@Body() verifyEmailCodeDto: VerifyEmailCodeDto) {
+    const verified = await this.authService.verifyEmailCode(
+      verifyEmailCodeDto.email,
+      verifyEmailCodeDto.code,
+    );
+    return { message: 'Email verified successfully', verified };
+  }
+
+  @Post('signup')
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 requests per minute for signup
+  @UseInterceptors(
+    FileInterceptor('certificate', buildPdfUploadOptions(10 * 1024 * 1024)),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'User registration',
+    description:
+      'Create a new user account with email, password, and role. For organization leaders, a PDF certificate is REQUIRED for AI-powered fraud verification.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        fullName: { type: 'string', example: 'John Doe' },
+        email: { type: 'string', example: 'john@example.com' },
+        phone: { type: 'string', example: '+1234567890' },
+        password: { type: 'string', example: 'password123', minLength: 6 },
+        role: {
+          type: 'string',
+          enum: ['family', 'careProvider', 'organization_leader'],
+        },
+        organizationName: { type: 'string', example: 'Hope Care Foundation' },
+        organizationDescription: {
+          type: 'string',
+          example: 'A community center for cognitive health',
+        },
+        verificationCode: { type: 'string', example: '123456' },
+        certificate: {
+          type: 'string',
+          format: 'binary',
+          description:
+            'Organization registration certificate PDF (REQUIRED for organization_leader)',
+        },
+      },
+      required: ['fullName', 'email', 'password', 'role', 'verificationCode'],
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'User successfully registered',
+    schema: {
+      type: 'object',
+      properties: {
+        accessToken: {
+          type: 'string',
+          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
+        refreshToken: {
+          type: 'string',
+          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
+        user: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: '60d5ecb74b24c72b8c8b4567' },
+            fullName: { type: 'string', example: 'John Doe' },
+            email: { type: 'string', example: 'john@example.com' },
+            phone: { type: 'string', example: '+1234567890' },
+            role: {
+              type: 'string',
+              enum: ['family', 'careProvider', 'organization_leader'],
+            },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: 'User with this email already exists',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description:
+      'Invalid input data, missing certificate for organization leader, or invalid certificate format (must be PDF)',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.TOO_MANY_REQUESTS,
+    description: 'Too many requests',
+    type: ErrorResponseDto,
+  })
+  async signup(
+    @Body() signupDto: SignupDto,
+    @UploadedFile()
+    certificate?: {
+      buffer: Buffer;
+      mimetype: string;
+      originalname: string;
+      size: number;
+    },
+  ) {
+    // Validate PDF certificate is required for organization leaders
+    if (signupDto.role === 'organization_leader') {
+      if (!certificate) {
+        throw new BadRequestException(
+          'Organization registration certificate (PDF) is required for organization leaders',
+        );
+      }
+
+      // Validate mimetype
+      if (certificate.mimetype !== 'application/pdf') {
+        throw new BadRequestException(
+          `Certificate must be a PDF file (received ${certificate.mimetype})`,
+        );
+      }
+
+      // Validate PDF magic bytes (file signature)
+      const pdfHeader = certificate.buffer.toString('utf8', 0, 5);
+      if (!pdfHeader.startsWith('%PDF-')) {
+        throw new BadRequestException(
+          'Invalid PDF file. The uploaded file does not have a valid PDF header. Please ensure you are uploading a genuine PDF document.',
+        );
+      }
+
+      // Validate file size (max 10MB for PDFs)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (certificate.size > maxSize) {
+        throw new BadRequestException(
+          `Certificate PDF file is too large (${(certificate.size / 1024 / 1024).toFixed(2)}MB). Maximum allowed size is 10MB.`,
+        );
+      }
+    }
+
+    return this.authService.signup(signupDto, certificate?.buffer);
+  }
+
+  @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests per minute for login
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'User login',
+    description: 'Authenticate user with email and password',
+  })
+  @ApiBody({ type: LoginDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Login successful',
+    schema: {
+      type: 'object',
+      properties: {
+        token: {
+          type: 'string',
+          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
+        user: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: '60d5ecb74b24c72b8c8b4567' },
+            fullName: { type: 'string', example: 'John Doe' },
+            email: { type: 'string', example: 'john@example.com' },
+            phone: { type: 'string', example: '+1234567890' },
+            role: { type: 'string', enum: ['family', 'doctor', 'volunteer'] },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid credentials',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid input data',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.TOO_MANY_REQUESTS,
+    description: 'Too many requests',
+    type: ErrorResponseDto,
+  })
+  async login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto);
+  }
+
+  @Post('social-login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests per minute
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Social login with provider ID token',
+    description:
+      'Authenticate with Google. The client sends an ID token and the backend verifies token signature and claims before creating or linking users.',
+  })
+  @ApiBody({ type: SocialLoginDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Social login successful',
+    schema: {
+      type: 'object',
+      properties: {
+        accessToken: {
+          type: 'string',
+          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
+        refreshToken: {
+          type: 'string',
+          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
+        user: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: '60d5ecb74b24c72b8c8b4567' },
+            fullName: { type: 'string', example: 'John Doe' },
+            email: { type: 'string', example: 'john@example.com' },
+            role: { type: 'string', example: 'family' },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid or unverified provider token',
+    type: ErrorResponseDto,
+  })
+  async socialLogin(@Body() socialLoginDto: SocialLoginDto) {
+    return this.authService.socialLogin(socialLoginDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('profile')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Get user profile',
+    description: "Retrieve the authenticated user's profile information",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Profile retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', example: '60d5ecb74b24c72b8c8b4567' },
+        fullName: { type: 'string', example: 'John Doe' },
+        email: { type: 'string', example: 'john@example.com' },
+        phone: { type: 'string', example: '+1234567890' },
+        role: { type: 'string', enum: ['family', 'doctor', 'volunteer'] },
+        createdAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid or expired token',
+    type: ErrorResponseDto,
+  })
+  async getProfile(@Request() req: { user: { id: string } }) {
+    return this.authService.getProfile(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('presence')
+  @ApiBearerAuth('JWT-auth')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update presence (keeps user "online")',
+    description: 'Call periodically while app is in use. Updates lastSeenAt.',
+  })
+  async updatePresence(@Request() req: { user: { id: string } }) {
+    await this.authService.updatePresence(req.user.id);
+    return { ok: true };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('profile')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Update own profile',
+    description:
+      'Update the authenticated user profile (fullName, phone, profilePic)',
+  })
+  @ApiBody({ type: UpdateProfileDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Profile updated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        fullName: { type: 'string' },
+        email: { type: 'string' },
+        phone: { type: 'string' },
+        role: { type: 'string' },
+        profilePic: { type: 'string' },
+        createdAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid or expired token',
+    type: ErrorResponseDto,
+  })
+  async updateProfile(
+    @Request() req: { user: { id: string } },
+    @Body() updateProfileDto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(req.user.id, updateProfileDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('complete-profile')
+  @ApiBearerAuth('JWT-auth')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Complete profile after Google Sign-In',
+    description:
+      'Set careProviderType and password for users who signed up via Google',
+  })
+  @ApiBody({ type: CompleteProfileDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Profile completed successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        fullName: { type: 'string' },
+        email: { type: 'string' },
+        role: { type: 'string' },
+        careProviderType: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid careProviderType or password',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid or expired token',
+    type: ErrorResponseDto,
+  })
+  async completeProfile(
+    @Request() req: { user: { id: string } },
+    @Body() completeProfileDto: CompleteProfileDto,
+  ) {
+    return this.authService.completeProfile(req.user.id, completeProfileDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('upload-profile-picture')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiBearerAuth('JWT-auth')
+  @UseInterceptors(FileInterceptor('file', buildImageUploadOptions()))
+  @ApiOperation({
+    summary: 'Upload profile picture',
+    description:
+      'Upload a profile picture for the authenticated user (multipart/form-data, field: file)',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Profile picture uploaded, returns updated profile',
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'No file or invalid file type',
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid or expired token',
+    type: ErrorResponseDto,
+  })
+  async uploadProfilePicture(
+    @Request() req: { user: { id: string } },
+    // Avoid relying on Multer types (may not be present in devDependencies).
+    // Use a minimal local shape for the uploaded file to satisfy TypeScript.
+    @UploadedFile()
+    file?: { buffer: Buffer; mimetype: string; originalname?: string },
+  ) {
+    assertUploadPresent(file);
+    assertUploadSize(file.buffer, UPLOAD_LIMITS.imageBytes);
+    const mimetype = normalizeMimeType(file.mimetype);
+    assertAllowedImageMime(mimetype);
+    return this.authService.uploadProfilePicture(req.user.id, {
+      buffer: file.buffer,
+      mimetype,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('family-members')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Get family members' })
+  async getFamilyMembers(@Request() req: { user: { id: string } }) {
+    return this.authService.getFamilyMembers(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('family-members')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiBearerAuth('JWT-auth')
+  @UseInterceptors(FileInterceptor('file', buildImageUploadOptions()))
+  @ApiOperation({
+    summary: 'Add family member with photo',
+    description:
+      'Multipart: file (image), name (string in body or form). Photo stored on Cloudinary.',
+  })
+  async addFamilyMember(
+    @Request() req: { user: { id: string } },
+    @Body('name') name: string,
+    @UploadedFile()
+    file?: { buffer: Buffer; mimetype: string },
+  ) {
+    assertUploadPresent(file);
+    assertUploadSize(file.buffer, UPLOAD_LIMITS.imageBytes);
+    const n = (name ?? '').trim() || 'Membre';
+    const mimetype = normalizeMimeType(file.mimetype);
+    assertAllowedImageMime(mimetype);
+    return this.authService.addFamilyMember(req.user.id, n, {
+      buffer: file.buffer,
+      mimetype,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('family-members/:id')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Delete family member' })
+  async deleteFamilyMember(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+  ) {
+    await this.authService.deleteFamilyMember(req.user.id, id);
+    return { ok: true };
+  }
+
+  @Post('refresh')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Refresh access token',
+    description:
+      'Get a new access token and refresh token using a valid refresh token',
+  })
+  @ApiBody({ type: RefreshTokenDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Tokens refreshed successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        accessToken: {
+          type: 'string',
+          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
+        refreshToken: {
+          type: 'string',
+          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid or expired refresh token',
+    type: ErrorResponseDto,
+  })
+  async refresh(
+    @Body() refreshTokenDto: RefreshTokenDto,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    return this.authService.refreshTokens(refreshTokenDto.refreshToken);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  @ApiBearerAuth('JWT-auth')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Logout user',
+    description: "Invalidate the user's refresh token",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Logged out successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Logged out successfully' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid or expired token',
+    type: ErrorResponseDto,
+  })
+  async logout(@Request() req: { user: { id: string } }) {
+    await this.authService.logout(req.user.id);
+    return { message: 'Logged out successfully' };
+  }
+
+  @Post('forgot-password')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Request password reset',
+    description:
+      'Send a verification code to the email address if it exists. For security, always returns success regardless of whether email exists.',
+  })
+  @ApiBody({ type: ForgotPasswordDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'If email exists, verification code has been sent',
+    schema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          example:
+            'If your email is registered, you will receive a verification code shortly.',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid input data',
+    type: ErrorResponseDto,
+  })
+  async forgotPassword(
+    @Body() forgotPasswordDto: ForgotPasswordDto,
+  ): Promise<{ message: string }> {
+    await this.authService.forgotPassword(forgotPasswordDto.email);
+    return {
+      message:
+        'If your email is registered, you will receive a verification code shortly.',
+    };
+  }
+
+  @Post('verify-reset-code')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Verify password reset code',
+    description: 'Verify the 6-digit code sent to email',
+  })
+  @ApiBody({ type: VerifyResetCodeDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Code verified successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Code verified successfully' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid or expired verification code',
+    type: ErrorResponseDto,
+  })
+  async verifyResetCode(@Body() verifyResetCodeDto: VerifyResetCodeDto) {
+    await this.authService.verifyResetCode(
+      verifyResetCodeDto.email,
+      verifyResetCodeDto.code,
+    );
+    return { message: 'Code verified successfully' };
+  }
+
+  @Post('reset-password')
+  @Throttle({ default: { limit: 8, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reset password with verification code',
+    description:
+      'Reset password using the verified code. This will invalidate all refresh tokens.',
+  })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Password reset successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          example:
+            'Password reset successfully. Please login with your new password.',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid or expired verification code',
+    type: ErrorResponseDto,
+  })
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    await this.authService.resetPassword(
+      resetPasswordDto.email,
+      resetPasswordDto.code,
+      resetPasswordDto.newPassword,
+    );
+    return {
+      message:
+        'Password reset successfully. Please login with your new password.',
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('change-password')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiBearerAuth('JWT-auth')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Change password for authenticated user',
+    description:
+      'Change password by providing current password and new password',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        currentPassword: { type: 'string', example: 'oldPassword123' },
+        newPassword: { type: 'string', example: 'newPassword123' },
+      },
+      required: ['currentPassword', 'newPassword'],
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Password changed successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Password changed successfully' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Current password is incorrect',
+    type: ErrorResponseDto,
+  })
+  async changePassword(
+    @Request() req: { user: { id: string } },
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    await this.authService.changePassword(
+      req.user.id,
+      body.currentPassword,
+      body.newPassword,
+    );
+    return { message: 'Password changed successfully' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('change-email')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiBearerAuth('JWT-auth')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Change email for authenticated user',
+    description: 'Request email change (sends verification email)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        newEmail: { type: 'string', example: 'newemail@example.com' },
+      },
+      required: ['newEmail'],
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Verification email sent',
+    schema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          example: 'Verification email sent to new address',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Email already in use',
+    type: ErrorResponseDto,
+  })
+  async changeEmail(
+    @Request() req: { user: { id: string } },
+    @Body() body: { newEmail: string },
+  ) {
+    await this.authService.changeEmail(req.user.id, body.newEmail);
+    return { message: 'Verification email sent to new address' };
+  }
+  @Public()
+  @Post('activate')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Activate account with token',
+    description: 'Activate invited staff account and set password',
+  })
+  async activate(
+    @Body() body: { token: string; password: string },
+  ): Promise<{ message: string }> {
+    await this.authService.activateAccount(body.token, body.password);
+    return { message: 'Account activated successfully. You can now log in.' };
+  }
+}

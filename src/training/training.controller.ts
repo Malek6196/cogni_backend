@@ -1,0 +1,256 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AdminGuard } from '../auth/admin.guard';
+import { TrainingService } from './training.service';
+import { CreateTrainingCourseDto } from './dto/create-training-course.dto';
+import { UpdateTrainingCourseDto } from './dto/update-training-course.dto';
+import { ApproveTrainingCourseDto } from './dto/approve-training-course.dto';
+import { SubmitQuizDto } from './dto/submit-quiz.dto';
+import { AnalyzeQuizSessionDto } from './dto/analyze-quiz-session.dto';
+
+@ApiTags('training')
+@Controller('training')
+export class TrainingController {
+  constructor(private readonly trainingService: TrainingService) {}
+
+  @Get('courses')
+  @ApiOperation({
+    summary: 'List approved training courses (for caregivers)',
+  })
+  @ApiResponse({ status: 200, description: 'List of approved courses' })
+  async listCourses() {
+    return this.trainingService.listApproved();
+  }
+
+  @Get('courses/:id')
+  @ApiOperation({ summary: 'Get one training course by id' })
+  @ApiResponse({
+    status: 200,
+    description: 'Course details (quiz without correct answers)',
+  })
+  @ApiResponse({ status: 404, description: 'Course not found' })
+  async getCourse(@Param('id') id: string) {
+    return this.trainingService.getById(id, false);
+  }
+
+  @Post('courses/:id/enroll')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Enroll in a training course' })
+  @ApiResponse({ status: 200, description: 'Enrollments list' })
+  async enroll(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+  ) {
+    return this.trainingService.enroll(req.user.id, id);
+  }
+
+  @Get('my-enrollments')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Get my training enrollments and progress' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of enrollments with progress',
+  })
+  async myEnrollments(@Request() req: { user: { id: string } }) {
+    return this.trainingService.getMyEnrollments(req.user.id);
+  }
+
+  @Post('courses/:id/complete-content')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Mark course content as completed (before quiz)' })
+  @ApiResponse({ status: 200, description: 'Updated enrollments' })
+  async markContentCompleted(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+  ) {
+    return this.trainingService.markContentCompleted(req.user.id, id);
+  }
+
+  @Post('courses/:id/submit-quiz')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Submit quiz answers; returns score, pass/fail, and review with correct answers',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Score, passed, enrollments, and review',
+  })
+  async submitQuiz(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+    @Body() dto: SubmitQuizDto,
+  ) {
+    return this.trainingService.submitQuiz(
+      req.user.id,
+      id,
+      dto.answers,
+      dto.textAnswers,
+    );
+  }
+
+  @Get('next-course')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Get next unlocked course id (for progression)' })
+  @ApiResponse({ status: 200, description: 'Course id or null if all done' })
+  async nextCourse(@Request() req: { user: { id: string } }) {
+    const id = await this.trainingService.getNextUnlockedCourseId(req.user.id);
+    return { courseId: id };
+  }
+
+  // ——— Quiz Session Analysis ———
+
+  @Post('analyze-session')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Submit behavioral analysis data collected during a quiz session',
+    description:
+      'Receives client-side behavioral metrics, re-scores server-side (rule-based or ML), ' +
+      'persists the result, and returns enriched feedback. ' +
+      'ML upgrade path: swap _serverSideEngagement/_serverSideReliability in TrainingService.',
+  })
+  @ApiResponse({ status: 201, description: 'Analysis stored and scored' })
+  async analyzeSession(
+    @Request() req: { user: { id: string } },
+    @Body() dto: AnalyzeQuizSessionDto,
+  ) {
+    return this.trainingService.analyzeSession(req.user.id, dto);
+  }
+
+  @Get('admin/session-analyses/quiz/:quizId')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Admin: list all behavior analyses for a specific quiz',
+  })
+  async getQuizAnalyses(@Param('quizId') quizId: string) {
+    return this.trainingService.getSessionAnalyses(quizId);
+  }
+
+  @Get('admin/session-analyses/user/:userId')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Admin: list all behavior analyses for a specific user',
+  })
+  async getUserAnalyses(@Param('userId') userId: string) {
+    return this.trainingService.getUserAnalyses(userId);
+  }
+
+  @Get('admin/session-analyses/summary')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Admin: aggregate behavior analytics (engagement/reliability trends and risk distribution)',
+  })
+  async getSessionAnalysesSummary(
+    @Query('quizId') quizId?: string,
+    @Query('userId') userId?: string,
+    @Query('days') days?: string,
+  ) {
+    const parsedDays = Number(days);
+    return this.trainingService.getSessionAnalysesSummary({
+      quizId,
+      userId,
+      days: Number.isFinite(parsedDays) ? parsedDays : undefined,
+    });
+  }
+
+  // ——— Admin ———
+
+  @Get('admin/courses')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'List all training courses (including unapproved)' })
+  @ApiResponse({ status: 200, description: 'List of all courses' })
+  async listAllCourses() {
+    return this.trainingService.listAll();
+  }
+
+  @Get('admin/courses/:id')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Get course by id (admin, includes approval info)' })
+  async getCourseAdmin(@Param('id') id: string) {
+    return this.trainingService.getById(id, true);
+  }
+
+  @Post('admin/courses')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Create training course (e.g. from scraper)' })
+  @ApiResponse({ status: 201, description: 'Created course' })
+  async createCourse(@Body() dto: CreateTrainingCourseDto) {
+    return this.trainingService.create(dto);
+  }
+
+  @Patch('admin/courses/:id')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Update training course' })
+  async updateCourse(
+    @Param('id') id: string,
+    @Body() dto: UpdateTrainingCourseDto,
+  ) {
+    return this.trainingService.update(id, dto);
+  }
+
+  @Patch('admin/courses/:id/approve')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Approve or reject course (professional validation)',
+  })
+  async approveCourse(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+    @Body() dto: ApproveTrainingCourseDto,
+  ) {
+    return this.trainingService.approve(id, req.user.id, dto);
+  }
+
+  // ── Gemini Vision gaze analysis ─────────────────────────────────────────
+
+  @Post('analyze-gaze')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Analyze a camera frame with Gemini Vision to detect if the user is looking at the screen',
+  })
+  async analyzeGaze(
+    @Body()
+    body: {
+      imageBase64: string;
+      mimeType?: 'image/jpeg' | 'image/png';
+    },
+  ) {
+    return this.trainingService.analyzeGaze(
+      body.imageBase64,
+      body.mimeType ?? 'image/jpeg',
+    );
+  }
+}
