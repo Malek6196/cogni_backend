@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@deepgram/sdk": "^4.11.3",
-    "@google-cloud/speech": "^7.2.1",
     "@google/generative-ai": "^0.24.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
@@ -39,7 +38,6 @@
     "@nestjs/websockets": "^11.1.13",
     "@sendgrid/mail": "^8.1.6",
     "@willsoto/nestjs-prometheus": "^6.1.0",
-    "@xenova/transformers": "^2.17.2",
     "axios": "^1.13.5",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.2.0",
@@ -61,6 +59,12 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "swagger-ui-express": "^5.0.1"
+  },
+  "overrides": {
+    "basic-ftp": "^5.3.0",
+    "follow-redirects": "^1.16.0",
+    "protobufjs": "^7.5.5",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

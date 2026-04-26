@@ -185,7 +185,10 @@ export class VolunteersController {
     description:
       'Returns live competencies, badges, impact, and stats derived from real caregiver activity.',
   })
-  @ApiResponse({ status: 200, description: 'Dynamic caregiver profile summary' })
+  @ApiResponse({
+    status: 200,
+    description: 'Dynamic caregiver profile summary',
+  })
   async getProfileSummary(
     @Request() req: { user: { id: string } },
   ): Promise<VolunteerProfileSummaryResponse> {

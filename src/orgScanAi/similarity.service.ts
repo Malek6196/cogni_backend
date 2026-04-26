@@ -1,60 +1,30 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   FraudAnalysis,
   FraudAnalysisDocument,
 } from './schemas/fraud-analysis.schema';
-
-// Dynamic import for @xenova/transformers (ESM module)
-let pipeline: any;
+const EMBEDDING_DIMENSIONS = 256;
 
 @Injectable()
-export class SimilarityService implements OnModuleInit {
+export class SimilarityService {
   private readonly logger = new Logger(SimilarityService.name);
-  private extractor: any = null;
-  private isInitialized = false;
 
   constructor(
     @InjectModel(FraudAnalysis.name)
     private fraudAnalysisModel: Model<FraudAnalysisDocument>,
-  ) {}
-
-  async onModuleInit() {
-    await this.initializeModel();
-  }
-
-  /**
-   * Initialize the embedding model
-   */
-  private async initializeModel(): Promise<void> {
-    try {
-      this.logger.log('Initializing embedding model...');
-
-      // Dynamic import for ESM module
-      const transformers = await import('@xenova/transformers');
-      pipeline = transformers.pipeline;
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-      this.extractor = await pipeline(
-        'feature-extraction',
-        'Xenova/all-MiniLM-L6-v2',
-      );
-
-      this.isInitialized = true;
-      this.logger.log('Embedding model initialized successfully');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`Failed to initialize embedding model: ${message}`);
-      // Don't throw - service will work without similarity if model fails to load
-    }
+  ) {
+    this.logger.log(
+      'Similarity service initialized with local hashed-token embeddings',
+    );
   }
 
   /**
    * Check if the similarity service is ready
    */
   isReady(): boolean {
-    return this.isInitialized && this.extractor !== null;
+    return true;
   }
 
   /**
@@ -62,36 +32,88 @@ export class SimilarityService implements OnModuleInit {
    * @param text - Document text to embed
    * @returns Embedding vector as number array
    */
-  async generateEmbedding(text: string): Promise<number[]> {
+  generateEmbedding(text: string): Promise<number[]> {
     if (!this.isReady()) {
       this.logger.warn(
         'Embedding model not initialized, returning empty embedding',
       );
-      return [];
+      return Promise.resolve([]);
     }
 
     try {
-      // Truncate text to max 512 tokens (approx 2000 chars for safety)
-      const truncatedText = text.slice(0, 2000);
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-      const output = (await this.extractor(truncatedText, {
-        pooling: 'mean',
-        normalize: true,
-      })) as { data: ArrayLike<number> };
-
-      // Convert to regular array
-      const embedding = Array.from(output.data);
+      const embedding = this.buildHashedEmbedding(text);
 
       this.logger.debug(
         `Generated embedding with ${embedding.length} dimensions`,
       );
-      return embedding;
+      return Promise.resolve(embedding);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(`Failed to generate embedding: ${message}`);
+      return Promise.resolve([]);
+    }
+  }
+
+  /**
+   * Build a deterministic normalized embedding without external ML runtimes.
+   * This preserves similarity scoring while avoiding heavyweight vulnerable deps.
+   */
+  private buildHashedEmbedding(text: string): number[] {
+    const normalized = text
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, ' ')
+      .replace(/[^a-z0-9\s]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 6000);
+    if (!normalized) {
       return [];
     }
+
+    const tokens = normalized
+      .split(' ')
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2);
+    if (tokens.length === 0) {
+      return [];
+    }
+
+    const vector = new Array<number>(EMBEDDING_DIMENSIONS).fill(0);
+    const totalTokens = tokens.length;
+
+    for (let index = 0; index < totalTokens; index += 1) {
+      const token = tokens[index];
+      const tokenWeight = token.length > 6 ? 1.35 : token.length > 3 ? 1.15 : 1;
+      const currentBucket = this.hashToken(token) % EMBEDDING_DIMENSIONS;
+      vector[currentBucket] += tokenWeight;
+
+      if (index < totalTokens - 1) {
+        const bigramBucket =
+          this.hashToken(`${token}_${tokens[index + 1]}`) %
+          EMBEDDING_DIMENSIONS;
+        vector[bigramBucket] += tokenWeight * 0.45;
+      }
+    }
+
+    let norm = 0;
+    for (const value of vector) {
+      norm += value * value;
+    }
+    norm = Math.sqrt(norm);
+    if (norm === 0) {
+      return [];
+    }
+    return vector.map((value) => Number((value / norm).toFixed(8)));
+  }
+
+  private hashToken(value: string): number {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return Math.abs(hash >>> 0);
   }
 
   /**

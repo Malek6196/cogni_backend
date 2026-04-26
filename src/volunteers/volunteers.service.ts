@@ -310,7 +310,10 @@ export class VolunteersService {
         startTime?: string;
         endTime?: string;
       };
-      return sum + this.calculateHoursBetween(appointment.startTime, appointment.endTime);
+      return (
+        sum +
+        this.calculateHoursBetween(appointment.startTime, appointment.endTime)
+      );
     }, 0);
     const serviceHours = Number(serviceHoursRaw.toFixed(1));
     const missionsCompleted = completedTasks + completedAppointments;
@@ -1613,13 +1616,14 @@ export class VolunteersService {
     };
   }
 
-  private calculateHoursBetween(
-    startTime?: string,
-    endTime?: string,
-  ): number {
+  private calculateHoursBetween(startTime?: string, endTime?: string): number {
     const startMinutes = this.timeStringToMinutes(startTime);
     const endMinutes = this.timeStringToMinutes(endTime);
-    if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+    if (
+      startMinutes === null ||
+      endMinutes === null ||
+      endMinutes <= startMinutes
+    ) {
       return 0;
     }
     return (endMinutes - startMinutes) / 60;
@@ -1643,9 +1647,12 @@ export class VolunteersService {
     const futureDates = availabilityDocs.flatMap((availabilityDoc) => {
       const dates = availabilityDoc.dates;
       if (!Array.isArray(dates)) return [] as string[];
-      return dates
+      return (dates as unknown[])
         .map((value) => value?.toString())
-        .filter((date): date is string => Boolean(date) && date >= todayIso);
+        .filter(
+          (date): date is string =>
+            typeof date === 'string' && date.length > 0 && date >= todayIso,
+        );
     });
     futureDates.sort((left, right) => left.localeCompare(right));
     const recurringSlotsCount = availabilityDocs.filter((availabilityDoc) => {
@@ -1695,7 +1702,8 @@ export class VolunteersService {
         id: 'care-role',
         label: this.formatCareProviderTypeLabel(careProviderType),
         source: 'Parcours',
-        reason: 'Issu de votre profil soignant et de votre parcours d’onboarding.',
+        reason:
+          'Issu de votre profil soignant et de votre parcours d’onboarding.',
       });
     }
 
@@ -1707,7 +1715,8 @@ export class VolunteersService {
         id: 'specialty',
         label: specialty.trim(),
         source: 'Spécialisation',
-        reason: 'Déclarée dans votre profil et utilisée pour personnaliser vos missions.',
+        reason:
+          'Déclarée dans votre profil et utilisée pour personnaliser vos missions.',
       });
     }
 
@@ -1725,7 +1734,8 @@ export class VolunteersService {
         id: 'certified',
         label: 'Certification validée',
         source: 'Reconnaissance',
-        reason: 'Certification obtenue après validation du parcours qualifiant.',
+        reason:
+          'Certification obtenue après validation du parcours qualifiant.',
       });
     }
 
@@ -1735,7 +1745,7 @@ export class VolunteersService {
         label: 'Accompagnement terrain',
         source: 'Missions',
         reason:
-            '${args.stats.completedAppointments} mission(s) d’accompagnement réalisées avec des familles.',
+          '${args.stats.completedAppointments} mission(s) d’accompagnement réalisées avec des familles.',
       });
     }
 
@@ -1745,7 +1755,7 @@ export class VolunteersService {
         label: 'Suivi de mission',
         source: 'Fiabilité',
         reason:
-            '${args.stats.completedTasks} tâche(s) finalisée(s) dans votre parcours de bénévole.',
+          '${args.stats.completedTasks} tâche(s) finalisée(s) dans votre parcours de bénévole.',
       });
     }
 
@@ -1755,7 +1765,7 @@ export class VolunteersService {
         label: 'Disponibilité active',
         source: 'Engagement',
         reason:
-            'Votre agenda contient des créneaux publiés pour de futures missions.',
+          'Votre agenda contient des créneaux publiés pour de futures missions.',
       });
     }
 
@@ -1805,7 +1815,8 @@ export class VolunteersService {
       this.createBadge({
         id: 'steady-support',
         label: 'Présence',
-        description: 'Progresse avec vos heures de service réellement accomplies.',
+        description:
+          'Progresse avec vos heures de service réellement accomplies.',
         currentValue: Math.round(args.stats.serviceHours),
         unlockTarget: 5,
         advanceTarget: 20,
@@ -1815,9 +1826,9 @@ export class VolunteersService {
         label: 'Certification',
         description: 'Récompense la formation validée et sa mise en pratique.',
         currentValue:
-            (args.trainingCertified ? 1 : 0) +
-            (args.completedCourses >= 2 ? 1 : 0) +
-            (args.availability.active ? 1 : 0),
+          (args.trainingCertified ? 1 : 0) +
+          (args.completedCourses >= 2 ? 1 : 0) +
+          (args.availability.active ? 1 : 0),
         unlockTarget: 1,
         advanceTarget: 3,
       }),
