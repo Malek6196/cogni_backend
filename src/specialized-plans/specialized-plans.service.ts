@@ -115,6 +115,23 @@ export class SpecializedPlansService {
     return this.planModel.find(filter).sort({ createdAt: -1 });
   }
 
+  async getPlansByChildIds(childIds: string[]): Promise<SpecializedPlan[]> {
+    const validIds = childIds.filter((childId) =>
+      Types.ObjectId.isValid(childId),
+    );
+    if (validIds.length === 0) {
+      return [];
+    }
+    return this.planModel
+      .find({
+        childId: { $in: validIds.map((childId) => new Types.ObjectId(childId)) },
+        status: 'active',
+      })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec() as Promise<SpecializedPlan[]>;
+  }
+
   /**
    * Get all active plans for a child (for parent progress summary). No org filter.
    */

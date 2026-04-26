@@ -78,21 +78,34 @@ describe('ChildAccessService', () => {
     });
   });
 
-  it('allows a specialist from the same organization', async () => {
+  it('allows an assigned specialist', async () => {
+    mockChild();
+    userModel.findById.mockReturnValue(
+      createLeanQuery({
+        _id: new Types.ObjectId(assignedSpecialistId),
+        role: 'doctor',
+        organizationId: new Types.ObjectId(organizationId),
+      }),
+    );
+
+    await expect(
+      service.assertCanAccessChild(childId, assignedSpecialistId),
+    ).resolves.toMatchObject({ via: 'assigned_specialist' });
+  });
+
+  it('rejects a specialist from the same organization when not assigned', async () => {
     mockChild();
     userModel.findById.mockReturnValue(
       createLeanQuery({
         _id: new Types.ObjectId(sameOrgSpecialistId),
-        role: 'careProvider',
+        role: 'doctor',
         organizationId: new Types.ObjectId(organizationId),
       }),
     );
 
     await expect(
       service.assertCanAccessChild(childId, sameOrgSpecialistId),
-    ).resolves.toMatchObject({
-      via: 'same_organization',
-    });
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('rejects an unrelated healthcare user', async () => {

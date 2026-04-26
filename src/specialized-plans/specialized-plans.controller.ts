@@ -11,30 +11,31 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { SpecializedPlansService } from './specialized-plans.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CreatePlanDto } from './dto/create-plan.dto';
+import { Child, ChildDocument } from '../children/schemas/child.schema';
 
 @ApiTags('Specialized Plans (PECS/TEACCH)')
 @Controller('specialized-plans')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class SpecializedPlansController {
-  constructor(private readonly plansService: SpecializedPlansService) {}
+  constructor(
+    private readonly plansService: SpecializedPlansService,
+    @InjectModel(Child.name) private readonly childModel: Model<ChildDocument>,
+  ) {}
 
   @Post('upload-image')
-  @Roles(
-    'psychologist',
-    'speech_therapist',
-    'occupational_therapist',
-    'doctor',
-    'volunteer',
-  )
+  @Roles('psychologist', 'speech_therapist', 'occupational_therapist', 'doctor')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Upload image for PECS card' })
   async uploadImage(
@@ -50,13 +51,7 @@ export class SpecializedPlansController {
   }
 
   @Post()
-  @Roles(
-    'psychologist',
-    'speech_therapist',
-    'occupational_therapist',
-    'doctor',
-    'volunteer',
-  )
+  @Roles('psychologist', 'speech_therapist', 'occupational_therapist', 'doctor')
   @ApiOperation({ summary: 'Create a new PECS or TEACCH plan for a child' })
   async createPlan(
     @Request() req: { user: { id: string; organizationId: string } },
@@ -75,14 +70,31 @@ export class SpecializedPlansController {
     'speech_therapist',
     'occupational_therapist',
     'doctor',
-    'volunteer',
     'organization_leader',
   )
   @ApiOperation({ summary: 'Get all active plans for a specific child' })
   async getByChild(
-    @Request() req: { user: { organizationId?: string } },
+    @Request() req: { user: { id: string; organizationId?: string; role?: string } },
     @Param('childId') childId: string,
   ) {
+    const child = await this.childModel
+      .findById(childId)
+      .select('specialistId organizationId')
+      .lean()
+      .exec();
+    if (!child) {
+      throw new NotFoundException('Child not found');
+    }
+    if (req.user.role === 'organization_leader') {
+      if (
+        !req.user.organizationId ||
+        child.organizationId?.toString() !== req.user.organizationId
+      ) {
+        throw new NotFoundException('Child not found');
+      }
+    } else if (child.specialistId?.toString() !== req.user.id) {
+      throw new NotFoundException('Child not found');
+    }
     return await this.plansService.getPlansByChild(
       childId,
       req.user.organizationId,
@@ -105,26 +117,14 @@ export class SpecializedPlansController {
   }
 
   @Get('my-plans')
-  @Roles(
-    'psychologist',
-    'speech_therapist',
-    'occupational_therapist',
-    'doctor',
-    'volunteer',
-  )
+  @Roles('psychologist', 'speech_therapist', 'occupational_therapist', 'doctor')
   @ApiOperation({ summary: 'Get plans created by the current specialist' })
   async getMyPlans(@Request() req: { user: { id: string } }) {
     return await this.plansService.getPlansBySpecialist(req.user.id);
   }
 
   @Patch(':id')
-  @Roles(
-    'psychologist',
-    'speech_therapist',
-    'occupational_therapist',
-    'doctor',
-    'volunteer',
-  )
+  @Roles('psychologist', 'speech_therapist', 'occupational_therapist', 'doctor')
   @ApiOperation({ summary: 'Update plan content' })
   async updatePlan(
     @Request() req: { user: { id: string } },
@@ -135,13 +135,7 @@ export class SpecializedPlansController {
   }
 
   @Delete(':id')
-  @Roles(
-    'psychologist',
-    'speech_therapist',
-    'occupational_therapist',
-    'doctor',
-    'volunteer',
-  )
+  @Roles('psychologist', 'speech_therapist', 'occupational_therapist', 'doctor')
   @ApiOperation({ summary: 'Delete a plan' })
   async deletePlan(
     @Request() req: { user: { id: string } },

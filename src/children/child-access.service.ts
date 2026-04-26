@@ -95,14 +95,11 @@ export class ChildAccessService {
       return { child, user, via: 'same_organization' };
     }
 
-    if (
-      this.isSpecialistRole(role) &&
-      (isAssignedSpecialist || isSameOrganization)
-    ) {
+    if (this.isSpecialistRole(role) && isAssignedSpecialist) {
       return {
         child,
         user,
-        via: isAssignedSpecialist ? 'assigned_specialist' : 'same_organization',
+        via: 'assigned_specialist',
       };
     }
 
