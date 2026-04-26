@@ -137,6 +137,19 @@ function effectiveCareProviderType(
   return appType;
 }
 
+/** Volunteer tasks only apply to the caregiver track, not specialist roles. */
+function isCaregiverProfile(
+  user: { role?: string; careProviderType?: string } | null,
+  application: { careProviderType?: string } | null,
+): boolean {
+  const effectiveType = effectiveCareProviderType(
+    application?.careProviderType,
+    user,
+  );
+  if (effectiveType?.trim().toLowerCase() === 'caregiver') return true;
+  return user?.role === 'careProvider' || user?.role === 'volunteer';
+}
+
 export type DocumentType = 'id' | 'certificate' | 'other';
 
 type BadgeState = 'locked' | 'unlocked' | 'advanced';
@@ -221,7 +234,7 @@ export class VolunteersService {
     userId: string,
   ): Promise<VolunteerProfileSummaryResponse> {
     const objectId = new Types.ObjectId(userId);
-    const [userDoc, applicationDoc, taskDocs, appointmentDocs, availabilityDocs] =
+    const [userDoc, applicationDoc, appointmentDocs, availabilityDocs] =
       await Promise.all([
         this.userModel
           .findById(userId)
@@ -231,13 +244,8 @@ export class VolunteersService {
         this.applicationModel
           .findOne({ userId: objectId })
           .select(
-            'status careProviderType specialty trainingCertified trainingCertifiedAt createdAt',
+            'status careProviderType specialty competencies trainingCertified trainingCertifiedAt createdAt',
           )
-          .lean()
-          .exec(),
-        this.volunteerTaskModel
-          .find({ volunteerId: objectId, status: 'completed' })
-          .select('status completedAt createdAt')
           .lean()
           .exec(),
         this.appointmentModel
@@ -255,6 +263,30 @@ export class VolunteersService {
           .lean()
           .exec(),
       ]);
+
+    const userProfile = userDoc
+      ? {
+          role: userDoc.role,
+          careProviderType: userDoc.careProviderType,
+        }
+      : null;
+    const applicationProfile = applicationDoc
+      ? {
+          careProviderType: applicationDoc.careProviderType,
+        }
+      : null;
+    const includesVolunteerTasks = isCaregiverProfile(
+      userProfile,
+      applicationProfile,
+    );
+
+    const taskDocs = includesVolunteerTasks
+      ? await this.volunteerTaskModel
+          .find({ volunteerId: objectId, status: 'completed' })
+          .select('status completedAt createdAt')
+          .lean()
+          .exec()
+      : [];
 
     const enrollmentDocs = await this.courseEnrollmentModel
       .find({
@@ -437,6 +469,9 @@ export class VolunteersService {
       app.careProviderType = dto.careProviderType as any;
     }
     if (dto.specialty !== undefined) app.specialty = dto.specialty;
+    if (dto.competencies !== undefined) {
+      app.competencies = this.sanitizeCompetencies(dto.competencies);
+    }
     if (dto.organizationName !== undefined)
       app.organizationName = dto.organizationName;
     if (dto.organizationRole !== undefined)
@@ -454,6 +489,44 @@ export class VolunteersService {
           specialty: userDoc.specialty,
         }
       : null;
+    return this.toResponse(
+      app.toObject() as unknown as Record<string, unknown>,
+      false,
+      user,
+    );
+  }
+
+  async updateProfileCompetencies(
+    userId: string,
+    competencies: string[],
+  ): Promise<Record<string, unknown>> {
+    let app = await this.applicationModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
+    if (!app) {
+      app = await this.applicationModel.create({
+        userId: new Types.ObjectId(userId),
+        status: 'pending',
+        documents: [],
+      });
+    }
+
+    app.competencies = this.sanitizeCompetencies(competencies);
+    await app.save();
+
+    const userDoc = await this.userModel
+      .findById(userId)
+      .select('role careProviderType specialty')
+      .lean()
+      .exec();
+    const user = userDoc
+      ? {
+          role: userDoc.role,
+          careProviderType: userDoc.careProviderType,
+          specialty: userDoc.specialty,
+        }
+      : null;
+
     return this.toResponse(
       app.toObject() as unknown as Record<string, unknown>,
       false,
@@ -1389,6 +1462,11 @@ export class VolunteersService {
         ? (userIdRaw as { _id: { toString(): string } })._id?.toString?.()
         : (userIdRaw as Types.ObjectId)?.toString?.();
     const documents = (app.documents ?? []) as unknown[];
+    const competencies = Array.isArray(app.competencies)
+      ? (app.competencies as unknown[])
+          .map((value) => value?.toString().trim())
+          .filter((value): value is string => Boolean(value))
+      : [];
     const status = app.status as string | undefined;
     const hasDocuments = documents.length >= 1;
     const approvedWithType =
@@ -1405,6 +1483,7 @@ export class VolunteersService {
       status: app.status,
       careProviderType: careProviderType ?? app.careProviderType,
       specialty: specialty ?? app.specialty,
+      competencies,
       organizationName: app.organizationName,
       organizationRole: app.organizationRole,
       documents: app.documents ?? [],
@@ -1463,6 +1542,36 @@ export class VolunteersService {
 
   /** Volunteer lists their assigned tasks. */
   async getMyTasks(volunteerId: string) {
+    const [userDoc, applicationDoc] = await Promise.all([
+      this.userModel
+        .findById(volunteerId)
+        .select('role careProviderType')
+        .lean()
+        .exec(),
+      this.applicationModel
+        .findOne({ userId: new Types.ObjectId(volunteerId) })
+        .select('careProviderType')
+        .lean()
+        .exec(),
+    ]);
+
+    const isCaregiver = isCaregiverProfile(
+      userDoc
+        ? {
+            role: userDoc.role,
+            careProviderType: userDoc.careProviderType,
+          }
+        : null,
+      applicationDoc
+        ? {
+            careProviderType: applicationDoc.careProviderType,
+          }
+        : null,
+    );
+    if (!isCaregiver) {
+      return [];
+    }
+
     const list = await this.volunteerTaskModel
       .find({ volunteerId: new Types.ObjectId(volunteerId) })
       .populate('assignedBy', 'fullName')
@@ -1563,6 +1672,20 @@ export class VolunteersService {
       items.push(item);
     };
 
+    const manualCompetencies = Array.isArray(args.application?.['competencies'])
+      ? (args.application?.['competencies'] as unknown[])
+          .map((value) => value?.toString().trim())
+          .filter((value): value is string => Boolean(value))
+      : [];
+    for (const competency of manualCompetencies) {
+      pushUnique({
+        id: `manual-${competency.toLowerCase().replace(/[^a-z0-9]+/gi, '-')}`,
+        label: competency,
+        source: 'Profil',
+        reason: 'Compétence ajoutée depuis votre tableau de bord.',
+      });
+    }
+
     const careProviderType =
       args.application?.['careProviderType']?.toString() ??
       args.user?.['careProviderType']?.toString() ??
@@ -1648,6 +1771,21 @@ export class VolunteersService {
     return items.slice(0, 6);
   }
 
+  private sanitizeCompetencies(values: string[]): string[] {
+    const seen = new Set<string>();
+    const sanitized: string[] = [];
+    for (const rawValue of values) {
+      const value = rawValue?.toString().replace(/\s+/g, ' ').trim();
+      if (!value) continue;
+      const normalized = value.toLowerCase();
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      sanitized.push(value.slice(0, 48));
+      if (sanitized.length >= 12) break;
+    }
+    return sanitized;
+  }
+
   private buildBadges(args: {
     stats: VolunteerProfileStatSummary;
     availability: VolunteerProfileAvailabilitySummary;
@@ -1658,7 +1796,8 @@ export class VolunteersService {
       this.createBadge({
         id: 'mission-builder',
         label: 'Missions',
-        description: 'Se débloque en accomplissant des missions et des tâches.',
+        description:
+          'Se débloque au fil des missions réellement accomplies dans votre parcours.',
         currentValue: args.stats.missionsCompleted,
         unlockTarget: 1,
         advanceTarget: 10,

@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 const CARE_PROVIDER_TYPE_ENUM = [
@@ -48,4 +48,14 @@ export class UpdateApplicationMeDto {
   @IsOptional()
   @IsString()
   organizationRole?: string;
+
+  @ApiPropertyOptional({
+    description: 'Selected caregiver competencies shown in the profile',
+    type: [String],
+    example: ['TDAH', 'Art Thérapie', 'Lecture'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  competencies?: string[];
 }

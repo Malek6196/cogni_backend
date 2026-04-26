@@ -69,6 +69,24 @@ export class VolunteersController {
     return this.volunteersService.updateApplicationMe(req.user.id, dto);
   }
 
+  @Patch('profile-competencies')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Update my caregiver profile competencies',
+    description:
+      'Allows the caregiver to select or add profile competencies without changing the reviewed application fields.',
+  })
+  @ApiResponse({ status: 200, description: 'Updated application competencies' })
+  async updateProfileCompetencies(
+    @Request() req: { user: { id: string } },
+    @Body() dto: UpdateApplicationMeDto,
+  ) {
+    return this.volunteersService.updateProfileCompetencies(
+      req.user.id,
+      dto.competencies ?? [],
+    );
+  }
+
   @Post('application/documents')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file'))

@@ -50,6 +50,10 @@ export class VolunteerApplication {
   @Prop()
   specialty?: string;
 
+  /** Caregiver skills manually selected or added from the profile dashboard. */
+  @Prop({ type: [String], default: [] })
+  competencies?: string[];
+
   /** For organization leaders: organization name. */
   @Prop()
   organizationName?: string;
