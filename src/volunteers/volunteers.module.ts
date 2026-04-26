@@ -12,6 +12,14 @@ import {
 } from './schemas/volunteer-task.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import {
+  Appointment,
+  AppointmentSchema,
+} from '../appointments/schemas/appointment.schema';
+import {
+  Availability,
+  AvailabilitySchema,
+} from '../availabilities/availability.schema';
+import {
   CertificationAttempt,
   CertificationAttemptSchema,
 } from '../certification-test/schemas/certification-attempt.schema';
@@ -19,6 +27,10 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { MailModule } from '../mail/mail.module';
 import { CoursesModule } from '../courses/courses.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import {
+  CourseEnrollment,
+  CourseEnrollmentSchema,
+} from '../courses/schemas/course-enrollment.schema';
 
 @Module({
   imports: [
@@ -29,6 +41,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
       },
       { name: VolunteerTask.name, schema: VolunteerTaskSchema },
       { name: User.name, schema: UserSchema },
+      { name: Appointment.name, schema: AppointmentSchema },
+      { name: Availability.name, schema: AvailabilitySchema },
+      { name: CourseEnrollment.name, schema: CourseEnrollmentSchema },
       { name: CertificationAttempt.name, schema: CertificationAttemptSchema },
     ]),
     CloudinaryModule,

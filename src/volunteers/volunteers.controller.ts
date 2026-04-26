@@ -156,6 +156,18 @@ export class VolunteersController {
     return this.volunteersService.getMyCertificate(req.user.id);
   }
 
+  @Get('profile-summary')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Get my caregiver profile progression summary',
+    description:
+      'Returns live competencies, badges, impact, and stats derived from real caregiver activity.',
+  })
+  @ApiResponse({ status: 200, description: 'Dynamic caregiver profile summary' })
+  async getProfileSummary(@Request() req: { user: { id: string } }) {
+    return this.volunteersService.getProfileSummary(req.user.id);
+  }
+
   @Get('application/my-certificate/download')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({

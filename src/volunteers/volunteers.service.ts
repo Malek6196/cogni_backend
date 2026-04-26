@@ -20,6 +20,14 @@ import {
 import { VolunteerApplication } from './schemas/volunteer-application.schema';
 import { VolunteerTask } from './schemas/volunteer-task.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import {
+  Appointment,
+  AppointmentDocument,
+} from '../appointments/schemas/appointment.schema';
+import {
+  Availability,
+  AvailabilityDocument,
+} from '../availabilities/availability.schema';
 import { CertificationAttemptDocument } from '../certification-test/schemas/certification-attempt.schema';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { MailService } from '../mail/mail.service';
@@ -27,6 +35,10 @@ import { CoursesService } from '../courses/courses.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ReviewApplicationDto } from './dto/review-application.dto';
 import { UpdateApplicationMeDto } from './dto/update-application-me.dto';
+import {
+  CourseEnrollment,
+  CourseEnrollmentDocument,
+} from '../courses/schemas/course-enrollment.schema';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -127,6 +139,60 @@ function effectiveCareProviderType(
 
 export type DocumentType = 'id' | 'certificate' | 'other';
 
+type BadgeState = 'locked' | 'unlocked' | 'advanced';
+
+interface VolunteerProfileStatSummary {
+  totalPoints: number;
+  missionsCompleted: number;
+  serviceHours: number;
+  completedAppointments: number;
+  completedTasks: number;
+  completedCourses: number;
+}
+
+interface VolunteerProfileBadgeSummary {
+  id: string;
+  label: string;
+  description: string;
+  state: BadgeState;
+  progressPercent: number;
+  currentValue: number;
+  nextTarget: number | null;
+}
+
+interface VolunteerProfileCompetencySummary {
+  id: string;
+  label: string;
+  source: string;
+  reason: string;
+}
+
+interface VolunteerProfileAvailabilitySummary {
+  active: boolean;
+  upcomingDatesCount: number;
+  recurringSlotsCount: number;
+  nextDate: string | null;
+}
+
+interface VolunteerProfileImpactSummary {
+  score: number;
+  level: string;
+  summary: string;
+  progressPercent: number;
+  nextLevelLabel: string | null;
+}
+
+interface VolunteerProfileSummaryResponse {
+  refreshedAt: string;
+  storyline: string;
+  roleLabel: string;
+  stats: VolunteerProfileStatSummary;
+  availability: VolunteerProfileAvailabilitySummary;
+  competencies: VolunteerProfileCompetencySummary[];
+  badges: VolunteerProfileBadgeSummary[];
+  impact: VolunteerProfileImpactSummary;
+}
+
 @Injectable()
 export class VolunteersService {
   private readonly logger = new Logger(VolunteersService.name);
@@ -137,6 +203,12 @@ export class VolunteersService {
     @InjectModel(VolunteerTask.name)
     private readonly volunteerTaskModel: Model<VolunteerTask>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @InjectModel(Appointment.name)
+    private readonly appointmentModel: Model<AppointmentDocument>,
+    @InjectModel(Availability.name)
+    private readonly availabilityModel: Model<AvailabilityDocument>,
+    @InjectModel(CourseEnrollment.name)
+    private readonly courseEnrollmentModel: Model<CourseEnrollmentDocument>,
     @InjectModel('CertificationAttempt')
     private readonly certificationAttemptModel: Model<CertificationAttemptDocument>,
     private readonly cloudinary: CloudinaryService,
@@ -144,6 +216,128 @@ export class VolunteersService {
     private readonly coursesService: CoursesService,
     private readonly notifications: NotificationsService,
   ) {}
+
+  async getProfileSummary(
+    userId: string,
+  ): Promise<VolunteerProfileSummaryResponse> {
+    const objectId = new Types.ObjectId(userId);
+    const [userDoc, applicationDoc, taskDocs, appointmentDocs, availabilityDocs] =
+      await Promise.all([
+        this.userModel
+          .findById(userId)
+          .select('role careProviderType specialty createdAt')
+          .lean()
+          .exec(),
+        this.applicationModel
+          .findOne({ userId: objectId })
+          .select(
+            'status careProviderType specialty trainingCertified trainingCertifiedAt createdAt',
+          )
+          .lean()
+          .exec(),
+        this.volunteerTaskModel
+          .find({ volunteerId: objectId, status: 'completed' })
+          .select('status completedAt createdAt')
+          .lean()
+          .exec(),
+        this.appointmentModel
+          .find({
+            providerId: objectId,
+            consultationType: 'volunteer',
+            status: 'completed',
+          })
+          .select('date startTime endTime createdAt')
+          .lean()
+          .exec(),
+        this.availabilityModel
+          .find({ volunteerId: objectId })
+          .select('dates recurrence recurrenceOn createdAt')
+          .lean()
+          .exec(),
+      ]);
+
+    const enrollmentDocs = await this.courseEnrollmentModel
+      .find({
+        userId: objectId,
+        status: 'completed',
+        progressPercent: 100,
+      })
+      .populate('courseId', 'title isQualificationCourse')
+      .select('completedAt courseId')
+      .lean()
+      .exec();
+
+    const completedTasks = taskDocs.length;
+    const completedAppointments = appointmentDocs.length;
+    const completedCourses = enrollmentDocs.length;
+    const trainingCertified =
+      ((applicationDoc as { trainingCertified?: boolean } | null)
+        ?.trainingCertified ?? false) === true;
+    const serviceHoursRaw = appointmentDocs.reduce((sum, appointmentDoc) => {
+      const appointment = appointmentDoc as {
+        startTime?: string;
+        endTime?: string;
+      };
+      return sum + this.calculateHoursBetween(appointment.startTime, appointment.endTime);
+    }, 0);
+    const serviceHours = Number(serviceHoursRaw.toFixed(1));
+    const missionsCompleted = completedTasks + completedAppointments;
+    const totalPoints =
+      completedAppointments * 40 +
+      completedTasks * 25 +
+      completedCourses * 20 +
+      (trainingCertified ? 60 : 0);
+
+    const stats: VolunteerProfileStatSummary = {
+      totalPoints,
+      missionsCompleted,
+      serviceHours,
+      completedAppointments,
+      completedTasks,
+      completedCourses,
+    };
+    const availability = this.buildAvailabilitySummary(
+      availabilityDocs as Array<Record<string, unknown>>,
+    );
+    const competencies = this.buildCompetencies({
+      user: userDoc as Record<string, unknown> | null,
+      application: applicationDoc as Record<string, unknown> | null,
+      stats,
+      availability,
+      enrollments: enrollmentDocs as Array<Record<string, unknown>>,
+    });
+    const badges = this.buildBadges({
+      stats,
+      availability,
+      trainingCertified,
+      completedCourses,
+    });
+    const impact = this.buildImpact({
+      stats,
+      trainingCertified,
+      availability,
+    });
+    const storyline = this.buildStoryline({
+      application: applicationDoc as Record<string, unknown> | null,
+      stats,
+      availability,
+      trainingCertified,
+    });
+
+    return {
+      refreshedAt: new Date().toISOString(),
+      storyline,
+      roleLabel: this.resolveRoleLabel(
+        userDoc as Record<string, unknown> | null,
+        applicationDoc as Record<string, unknown> | null,
+      ),
+      stats,
+      availability,
+      competencies,
+      badges,
+      impact,
+    };
+  }
 
   async getOrCreateApplication(userId: string) {
     const userDoc = await this.userModel
@@ -1308,5 +1502,338 @@ export class VolunteersService {
       completedAt: t.completedAt,
       createdAt: t.createdAt,
     };
+  }
+
+  private calculateHoursBetween(
+    startTime?: string,
+    endTime?: string,
+  ): number {
+    const startMinutes = this.timeStringToMinutes(startTime);
+    const endMinutes = this.timeStringToMinutes(endTime);
+    if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+      return 0;
+    }
+    return (endMinutes - startMinutes) / 60;
+  }
+
+  private timeStringToMinutes(value?: string): number | null {
+    if (!value) return null;
+    const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+    if (!match) return null;
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
+  }
+
+  private buildAvailabilitySummary(
+    availabilityDocs: Array<Record<string, unknown>>,
+  ): VolunteerProfileAvailabilitySummary {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const futureDates = availabilityDocs.flatMap((availabilityDoc) => {
+      const dates = availabilityDoc.dates;
+      if (!Array.isArray(dates)) return [] as string[];
+      return dates
+        .map((value) => value?.toString())
+        .filter((date): date is string => Boolean(date) && date >= todayIso);
+    });
+    futureDates.sort((left, right) => left.localeCompare(right));
+    const recurringSlotsCount = availabilityDocs.filter((availabilityDoc) => {
+      return availabilityDoc.recurrenceOn === true;
+    }).length;
+    return {
+      active: recurringSlotsCount > 0 || futureDates.length > 0,
+      upcomingDatesCount: futureDates.length,
+      recurringSlotsCount,
+      nextDate: futureDates.length === 0 ? null : futureDates[0],
+    };
+  }
+
+  private buildCompetencies(args: {
+    user: Record<string, unknown> | null;
+    application: Record<string, unknown> | null;
+    stats: VolunteerProfileStatSummary;
+    availability: VolunteerProfileAvailabilitySummary;
+    enrollments: Array<Record<string, unknown>>;
+  }): VolunteerProfileCompetencySummary[] {
+    const items: VolunteerProfileCompetencySummary[] = [];
+    const pushUnique = (item: VolunteerProfileCompetencySummary): void => {
+      if (items.some((existing) => existing.id == item.id)) return;
+      items.push(item);
+    };
+
+    const careProviderType =
+      args.application?['careProviderType']?.toString() ??
+      args.user?['careProviderType']?.toString() ??
+      args.user?['role']?.toString();
+    if (careProviderType) {
+      pushUnique({
+        id: 'care-role',
+        label: this.formatCareProviderTypeLabel(careProviderType),
+        source: 'Parcours',
+        reason: 'Issu de votre profil soignant et de votre parcours d’onboarding.',
+      });
+    }
+
+    const specialty =
+      args.application?['specialty']?.toString() ??
+      args.user?['specialty']?.toString();
+    if (specialty != null && specialty.trim().length > 0) {
+      pushUnique({
+        id: 'specialty',
+        label: specialty.trim(),
+        source: 'Spécialisation',
+        reason: 'Déclarée dans votre profil et utilisée pour personnaliser vos missions.',
+      });
+    }
+
+    if (args.stats.completedCourses > 0) {
+      pushUnique({
+        id: 'training',
+        label: 'Formation complétée',
+        source: 'Apprentissage',
+        reason: `${args.stats.completedCourses} formation(s) terminée(s) dans l’app.`,
+      });
+    }
+
+    if ((args.application?['trainingCertified'] as bool? ?? false) == true) {
+      pushUnique({
+        id: 'certified',
+        label: 'Certification validée',
+        source: 'Reconnaissance',
+        reason: 'Certification obtenue après validation du parcours qualifiant.',
+      });
+    }
+
+    if (args.stats.completedAppointments > 0) {
+      pushUnique({
+        id: 'field-support',
+        label: 'Accompagnement terrain',
+        source: 'Missions',
+        reason:
+            '${args.stats.completedAppointments} mission(s) d’accompagnement réalisées avec des familles.',
+      });
+    }
+
+    if (args.stats.completedTasks > 0) {
+      pushUnique({
+        id: 'task-followthrough',
+        label: 'Suivi de mission',
+        source: 'Fiabilité',
+        reason:
+            '${args.stats.completedTasks} tâche(s) finalisée(s) dans votre parcours de bénévole.',
+      });
+    }
+
+    if (args.availability.active) {
+      pushUnique({
+        id: 'availability',
+        label: 'Disponibilité active',
+        source: 'Engagement',
+        reason:
+            'Votre agenda contient des créneaux publiés pour de futures missions.',
+      });
+    }
+
+    if (args.stats.serviceHours >= 10) {
+      pushUnique({
+        id: 'consistency',
+        label: 'Présence régulière',
+        source: 'Impact',
+        reason: 'Votre temps de service cumulé montre une implication durable.',
+      });
+    }
+
+    return items.slice(0, 6);
+  }
+
+  private buildBadges(args: {
+    stats: VolunteerProfileStatSummary;
+    availability: VolunteerProfileAvailabilitySummary;
+    trainingCertified: boolean;
+    completedCourses: number;
+  }): VolunteerProfileBadgeSummary[] {
+    return [
+      this.createBadge({
+        id: 'mission-builder',
+        label: 'Missions',
+        description: 'Se débloque en accomplissant des missions et des tâches.',
+        currentValue: args.stats.missionsCompleted,
+        unlockTarget: 1,
+        advanceTarget: 10,
+      }),
+      this.createBadge({
+        id: 'steady-support',
+        label: 'Présence',
+        description: 'Progresse avec vos heures de service réellement accomplies.',
+        currentValue: Math.round(args.stats.serviceHours),
+        unlockTarget: 5,
+        advanceTarget: 20,
+      }),
+      this.createBadge({
+        id: 'certified-guide',
+        label: 'Certification',
+        description: 'Récompense la formation validée et sa mise en pratique.',
+        currentValue:
+            (args.trainingCertified ? 1 : 0) +
+            (args.completedCourses >= 2 ? 1 : 0) +
+            (args.availability.active ? 1 : 0),
+        unlockTarget: 1,
+        advanceTarget: 3,
+      }),
+    ];
+  }
+
+  private createBadge(args: {
+    id: string;
+    label: string;
+    description: string;
+    currentValue: number;
+    unlockTarget: number;
+    advanceTarget: number;
+  }): VolunteerProfileBadgeSummary {
+    const state: BadgeState =
+      args.currentValue >= args.advanceTarget
+        ? 'advanced'
+        : args.currentValue >= args.unlockTarget
+          ? 'unlocked'
+          : 'locked';
+    const nextTarget =
+      state == 'locked'
+        ? args.unlockTarget
+        : state == 'unlocked'
+          ? args.advanceTarget
+          : null;
+    const progressBase =
+      state == 'locked'
+        ? Math.min(args.currentValue / args.unlockTarget, 1)
+        : Math.min(args.currentValue / args.advanceTarget, 1);
+    return {
+      id: args.id,
+      label: args.label,
+      description: args.description,
+      state,
+      progressPercent: Math.round(progressBase * 100),
+      currentValue: args.currentValue,
+      nextTarget,
+    };
+  }
+
+  private buildImpact(args: {
+    stats: VolunteerProfileStatSummary;
+    trainingCertified: boolean;
+    availability: VolunteerProfileAvailabilitySummary;
+  }): VolunteerProfileImpactSummary {
+    const milestones = [
+      { label: 'Élan', min: 0, max: 119 },
+      { label: 'Engagé', min: 120, max: 259 },
+      { label: 'Pilier', min: 260, max: 479 },
+      { label: 'Référence', min: 480, max: null },
+    ] as const;
+    const current =
+      milestones.find((milestone) => {
+        return milestone.max == null
+          ? args.stats.totalPoints >= milestone.min
+          : args.stats.totalPoints >= milestone.min &&
+              args.stats.totalPoints <= milestone.max;
+      }) ?? milestones[0];
+    const next =
+      milestones.find((milestone) => milestone.min > current.min) ?? null;
+    const progressPercent =
+      current.max == null
+        ? 100
+        : Math.round(
+            Math.max(
+              0,
+              Math.min(
+                100,
+                ((args.stats.totalPoints - current.min) /
+                  (current.max - current.min + 1)) *
+                  100,
+              ),
+            ),
+          );
+    const summaryParts = <string>[];
+    if (args.stats.missionsCompleted > 0) {
+      summaryParts.add('${args.stats.missionsCompleted} mission(s) validée(s)');
+    }
+    if (args.stats.serviceHours > 0) {
+      summaryParts.add('${args.stats.serviceHours} h de service');
+    }
+    if (args.trainingCertified) {
+      summaryParts.add('certification obtenue');
+    }
+    if (args.availability.active) {
+      summaryParts.add('agenda actif');
+    }
+    return {
+      score: args.stats.totalPoints,
+      level: current.label,
+      summary:
+        summaryParts.length === 0
+          ? 'Votre impact commencera à se construire dès vos premières actions validées.'
+          : summaryParts.join(' • '),
+      progressPercent: progressPercent,
+      nextLevelLabel: next?.label ?? null,
+    };
+  }
+
+  private buildStoryline(args: {
+    application: Record<string, unknown> | null;
+    stats: VolunteerProfileStatSummary;
+    availability: VolunteerProfileAvailabilitySummary;
+    trainingCertified: boolean;
+  }): string {
+    const fragments: string[] = [];
+    const specialty = args.application?['specialty']?.toString();
+    if (specialty != null && specialty.trim().length > 0) {
+      fragments.add('Spécialisation: ${specialty.trim()}');
+    }
+    if (args.trainingCertified) {
+      fragments.add('parcours certifié');
+    }
+    if (args.stats.missionsCompleted > 0) {
+      fragments.add('${args.stats.missionsCompleted} mission(s) validée(s)');
+    }
+    if (args.stats.serviceHours > 0) {
+      fragments.add('${args.stats.serviceHours} h de service cumulées');
+    }
+    if (args.availability.active) {
+      fragments.add('disponibilités publiées');
+    }
+    if (fragments.length === 0) {
+      return 'Votre profil évoluera automatiquement à mesure que vous terminez des missions, publiez vos disponibilités et validez vos formations.';
+    }
+    return fragments.join(' • ');
+  }
+
+  private resolveRoleLabel(
+    user: Record<string, unknown> | null,
+    application: Record<string, unknown> | null,
+  ): string {
+    const role =
+      application?['careProviderType']?.toString() ??
+      user?['careProviderType']?.toString() ??
+      user?['role']?.toString() ??
+      'volunteer';
+    return this.formatCareProviderTypeLabel(role);
+  }
+
+  private formatCareProviderTypeLabel(value: string): string {
+    const normalized = value.trim().toLowerCase();
+    const labels: Record<string, string> = {
+      volunteer: 'Bénévole',
+      careprovider: 'Aidant',
+      caregiver: 'Aidant',
+      doctor: 'Médecin',
+      psychologist: 'Psychologue',
+      speech_therapist: 'Orthophoniste',
+      occupational_therapist: 'Ergothérapeute',
+      ergotherapist: 'Ergothérapeute',
+      organization_leader: 'Responsable d’organisation',
+      other: 'Professionnel engagé',
+    };
+    return labels[normalized] ?? value;
   }
 }

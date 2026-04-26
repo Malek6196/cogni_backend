@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# congi_backend
-=======
 # CogniCare Backend
 
 NestJS API for the CogniCare healthcare platform.
@@ -164,4 +161,3 @@ Production reminders:
 The backend deploys automatically to Render on main branch pushes.
 
 Configuration in `render.yaml` and `../.github/workflows/ci.yml`.
->>>>>>> 412a49c (CogniCare Backend)
