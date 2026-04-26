@@ -141,7 +141,7 @@ export type DocumentType = 'id' | 'certificate' | 'other';
 
 type BadgeState = 'locked' | 'unlocked' | 'advanced';
 
-interface VolunteerProfileStatSummary {
+export interface VolunteerProfileStatSummary {
   totalPoints: number;
   missionsCompleted: number;
   serviceHours: number;
@@ -150,7 +150,7 @@ interface VolunteerProfileStatSummary {
   completedCourses: number;
 }
 
-interface VolunteerProfileBadgeSummary {
+export interface VolunteerProfileBadgeSummary {
   id: string;
   label: string;
   description: string;
@@ -160,21 +160,21 @@ interface VolunteerProfileBadgeSummary {
   nextTarget: number | null;
 }
 
-interface VolunteerProfileCompetencySummary {
+export interface VolunteerProfileCompetencySummary {
   id: string;
   label: string;
   source: string;
   reason: string;
 }
 
-interface VolunteerProfileAvailabilitySummary {
+export interface VolunteerProfileAvailabilitySummary {
   active: boolean;
   upcomingDatesCount: number;
   recurringSlotsCount: number;
   nextDate: string | null;
 }
 
-interface VolunteerProfileImpactSummary {
+export interface VolunteerProfileImpactSummary {
   score: number;
   level: string;
   summary: string;
@@ -182,7 +182,7 @@ interface VolunteerProfileImpactSummary {
   nextLevelLabel: string | null;
 }
 
-interface VolunteerProfileSummaryResponse {
+export interface VolunteerProfileSummaryResponse {
   refreshedAt: string;
   storyline: string;
   roleLabel: string;
@@ -1564,9 +1564,9 @@ export class VolunteersService {
     };
 
     const careProviderType =
-      args.application?['careProviderType']?.toString() ??
-      args.user?['careProviderType']?.toString() ??
-      args.user?['role']?.toString();
+      args.application?.['careProviderType']?.toString() ??
+      args.user?.['careProviderType']?.toString() ??
+      args.user?.['role']?.toString();
     if (careProviderType) {
       pushUnique({
         id: 'care-role',
@@ -1577,8 +1577,8 @@ export class VolunteersService {
     }
 
     const specialty =
-      args.application?['specialty']?.toString() ??
-      args.user?['specialty']?.toString();
+      args.application?.['specialty']?.toString() ??
+      args.user?.['specialty']?.toString();
     if (specialty != null && specialty.trim().length > 0) {
       pushUnique({
         id: 'specialty',
@@ -1597,7 +1597,7 @@ export class VolunteersService {
       });
     }
 
-    if ((args.application?['trainingCertified'] as bool? ?? false) == true) {
+    if (args.application?.['trainingCertified'] === true) {
       pushUnique({
         id: 'certified',
         label: 'Certification validée',
@@ -1754,18 +1754,20 @@ export class VolunteersService {
               ),
             ),
           );
-    const summaryParts = <string>[];
+    const summaryParts: string[] = [];
     if (args.stats.missionsCompleted > 0) {
-      summaryParts.add('${args.stats.missionsCompleted} mission(s) validée(s)');
+      summaryParts.push(
+        `${args.stats.missionsCompleted} mission(s) validée(s)`,
+      );
     }
     if (args.stats.serviceHours > 0) {
-      summaryParts.add('${args.stats.serviceHours} h de service');
+      summaryParts.push(`${args.stats.serviceHours} h de service`);
     }
     if (args.trainingCertified) {
-      summaryParts.add('certification obtenue');
+      summaryParts.push('certification obtenue');
     }
     if (args.availability.active) {
-      summaryParts.add('agenda actif');
+      summaryParts.push('agenda actif');
     }
     return {
       score: args.stats.totalPoints,
@@ -1786,21 +1788,21 @@ export class VolunteersService {
     trainingCertified: boolean;
   }): string {
     const fragments: string[] = [];
-    const specialty = args.application?['specialty']?.toString();
+    const specialty = args.application?.['specialty']?.toString();
     if (specialty != null && specialty.trim().length > 0) {
-      fragments.add('Spécialisation: ${specialty.trim()}');
+      fragments.push(`Spécialisation: ${specialty.trim()}`);
     }
     if (args.trainingCertified) {
-      fragments.add('parcours certifié');
+      fragments.push('parcours certifié');
     }
     if (args.stats.missionsCompleted > 0) {
-      fragments.add('${args.stats.missionsCompleted} mission(s) validée(s)');
+      fragments.push(`${args.stats.missionsCompleted} mission(s) validée(s)`);
     }
     if (args.stats.serviceHours > 0) {
-      fragments.add('${args.stats.serviceHours} h de service cumulées');
+      fragments.push(`${args.stats.serviceHours} h de service cumulées`);
     }
     if (args.availability.active) {
-      fragments.add('disponibilités publiées');
+      fragments.push('disponibilités publiées');
     }
     if (fragments.length === 0) {
       return 'Votre profil évoluera automatiquement à mesure que vous terminez des missions, publiez vos disponibilités et validez vos formations.';
@@ -1813,9 +1815,9 @@ export class VolunteersService {
     application: Record<string, unknown> | null,
   ): string {
     const role =
-      application?['careProviderType']?.toString() ??
-      user?['careProviderType']?.toString() ??
-      user?['role']?.toString() ??
+      application?.['careProviderType']?.toString() ??
+      user?.['careProviderType']?.toString() ??
+      user?.['role']?.toString() ??
       'volunteer';
     return this.formatCareProviderTypeLabel(role);
   }

@@ -28,7 +28,11 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { VolunteersService, DocumentType } from './volunteers.service';
+import {
+  VolunteersService,
+  DocumentType,
+  VolunteerProfileSummaryResponse,
+} from './volunteers.service';
 import { ReviewApplicationDto } from './dto/review-application.dto';
 import { UpdateApplicationMeDto } from './dto/update-application-me.dto';
 
@@ -164,7 +168,9 @@ export class VolunteersController {
       'Returns live competencies, badges, impact, and stats derived from real caregiver activity.',
   })
   @ApiResponse({ status: 200, description: 'Dynamic caregiver profile summary' })
-  async getProfileSummary(@Request() req: { user: { id: string } }) {
+  async getProfileSummary(
+    @Request() req: { user: { id: string } },
+  ): Promise<VolunteerProfileSummaryResponse> {
     return this.volunteersService.getProfileSummary(req.user.id);
   }
 
