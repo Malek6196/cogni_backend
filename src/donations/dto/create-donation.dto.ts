@@ -1,6 +1,8 @@
 import {
   IsString,
   IsNumber,
+  IsInt,
+  IsIn,
   IsBoolean,
   IsArray,
   IsOptional,
@@ -8,6 +10,7 @@ import {
   Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateDonationDto {
   @IsString()
@@ -16,17 +19,10 @@ export class CreateDonationDto {
   @IsString()
   description: string;
 
-  /** 0: Vêtements, 1: Mobilier, 2: Matériel d'éveil, 3: Autre */
-  @IsNumber()
-  @Min(0)
-  @Max(3)
-  @Type(() => Number)
+  @ApiProperty({ description: 'Catégorie du don (0=Vêtements, 1=Mobilier, 2=Jouets, 3=Bijoux, 4=Autre)' })
+  @IsInt()
+  @IsIn([0, 1, 2, 3, 4])
   category: number;
-
-  /** Catégorie personnalisée (quand category = 3) */
-  @IsOptional()
-  @IsString()
-  customCategory?: string;
 
   /** 0: Neuf, 1: Très bon état, 2: Bon état */
   @IsNumber()
@@ -68,4 +64,9 @@ export class CreateDonationDto {
 export class ClassifyDonationDto {
   @IsString()
   text: string;
+}
+
+export class ClassifyDonationImageDto {
+  @IsString()
+  imageBase64: string;
 }

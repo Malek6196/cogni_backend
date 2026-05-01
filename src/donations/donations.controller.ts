@@ -16,7 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DonationsService } from './donations.service';
-import { CreateDonationDto, ClassifyDonationDto } from './dto/create-donation.dto';
+import { CreateDonationDto, ClassifyDonationDto, ClassifyDonationImageDto } from './dto/create-donation.dto';
 import { LlmService } from '../progress-ai/llm.service';
 
 @ApiTags('donations')
@@ -105,6 +105,12 @@ export class DonationsController {
   @ApiOperation({ summary: 'Classify donation category using AI' })
   async classify(@Body() dto: ClassifyDonationDto) {
     return this.llmService.classifyDonationCategory(dto.text);
+  }
+
+  @Post('classify-image')
+  @ApiOperation({ summary: 'Classify donation category from image using AI' })
+  async classifyImage(@Body() dto: ClassifyDonationImageDto) {
+    return this.llmService.classifyDonationImage(dto.imageBase64);
   }
 
   @Delete(':id')

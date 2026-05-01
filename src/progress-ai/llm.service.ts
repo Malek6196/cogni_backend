@@ -218,34 +218,37 @@ Rules:
 
   /**
    * Classifie une description de produit dans une catégorie de don.
-   * Retourne: { category: number, categoryName: string, customCategory?: string }
-   * category: 0=Vêtements, 1=Mobilier, 2=Jouets/Matériel d'éveil, 3=Autre
+   * Retourne: { category: number, categoryName: string }
+   * category: 0=Vêtements, 1=Mobilier, 2=Jouets, 3=Bijoux, 4=Autre
    */
   async classifyDonationCategory(text: string): Promise<{
     category: number;
     categoryName: string;
-    customCategory?: string;
   }> {
     if (!this.apiKey) {
-      return { category: 3, categoryName: 'Autre' };
+      return { category: 0, categoryName: 'Vêtements' };
     }
     const prompt = `You are a product classifier for a donation platform helping families with special needs children.
-Classify the following item description into ONE of these categories:
-- 0: Clothing/Accessories (Vêtements/Accessoires): clothes, shoes, jewelry, bags, watches, accessories, scarves, hats, belts
-- 1: Furniture/Equipment (Mobilier/Équipement): furniture, beds, chairs, tables, shelves, medical equipment, appliances, electronics
-- 2: Toys/Learning Materials (Jouets/Matériel d'éveil): toys, games, books, educational materials, puzzles, sensory toys, stuffed animals
-- 3: Other (Autre): anything that doesn't fit the above categories
+Classify the following item description into ONE of these 5 categories:
+- 0: Clothing (Vêtements): clothes, shoes, bags, watches, accessories, scarves, hats, belts
+- 1: Furniture (Mobilier): furniture, beds, chairs, tables, shelves, medical equipment, appliances, electronics
+- 2: Toys (Jouets): toys, games, books, educational materials, puzzles, sensory toys, stuffed animals
+- 3: Jewelry (Bijoux): bracelets, necklaces, rings, earrings, brooches, chains, pendants, watches
+- 4: Other (Autre): anything that doesn't fit the above categories
 
 Item description: "${text.slice(0, 200)}"
 
 Respond with ONLY a valid JSON object in this exact format (no markdown, no code block, no preamble):
-{"category": number, "categoryName": "string", "customCategory": "string (optional, only if category is 3, describe what it is in French)"}
+{"category": number, "categoryName": "string"}
 
 Examples:
-- "bracelet en or" → {"category": 0, "categoryName": "Vêtements/Accessoires", "customCategory": "Bijoux"}
-- "lit médicalisé" → {"category": 1, "categoryName": "Mobilier/Équipement"}
-- "puzzle sensoriel" → {"category": 2, "categoryName": "Jouets/Matériel d'éveil"}
-- "cartable" → {"category": 0, "categoryName": "Vêtements/Accessoires", "customCategory": "Sacs/Accessoires"}`;
+- "bracelet en or" → {"category": 3, "categoryName": "Bijoux"}
+- "lit médicalisé" → {"category": 1, "categoryName": "Mobilier"}
+- "puzzle sensoriel" → {"category": 2, "categoryName": "Jouets"}
+- "bague" → {"category": 3, "categoryName": "Bijoux"}
+- "collier" → {"category": 3, "categoryName": "Bijoux"}
+- "t-shirt" → {"category": 0, "categoryName": "Vêtements"}
+- "outils de jardinage" → {"category": 4, "categoryName": "Autre"}`;
 
     try {
       const raw = await this.callModel(prompt);
@@ -254,17 +257,90 @@ Examples:
         .replace(/```\s*/g, '')
         .trim();
       const parsed = JSON.parse(cleaned);
-      const cat = typeof parsed.category === 'number' ? parsed.category : 3;
-      const validCat = cat >= 0 && cat <= 3 ? cat : 3;
-      const name = typeof parsed.categoryName === 'string' ? parsed.categoryName : 'Autre';
-      const custom = typeof parsed.customCategory === 'string' && parsed.customCategory.trim()
-        ? parsed.customCategory.trim()
-        : undefined;
-      return { category: validCat, categoryName: name, customCategory: custom };
+      const cat = typeof parsed.category === 'number' ? parsed.category : 0;
+      const validCat = cat >= 0 && cat <= 4 ? cat : 0;
+      const name = typeof parsed.categoryName === 'string' ? parsed.categoryName : 'Vêtements';
+      return { category: validCat, categoryName: name };
     } catch (e) {
       this.logger.warn(`Classification failed for "${text.slice(0, 50)}": ${(e as Error).message}`);
-      return { category: 3, categoryName: 'Autre' };
+      return { category: 0, categoryName: 'Vêtements' };
     }
+  }
+
+  /**
+   * Classifie une image de produit dans une catégorie de don.
+   * Retourne: { category: number, categoryName: string }
+   * category: 0=Vêtements, 1=Mobilier, 2=Jouets, 3=Bijoux, 4=Autre
+   */
+  async classifyDonationImage(imageBase64: string): Promise<{
+    category: number;
+    categoryName: string;
+  }> {
+    if (!this.apiKey) {
+      return { category: 0, categoryName: 'Vêtements' };
+    }
+    const prompt = `You are a product classifier for a donation platform helping families with special needs children.
+Look at the provided image and classify the item into ONE of these 5 categories:
+- 0: Clothing (Vêtements): clothes, shoes, bags, watches, accessories, scarves, hats, belts
+- 1: Furniture (Mobilier): furniture, beds, chairs, tables, shelves, medical equipment, appliances, electronics
+- 2: Toys (Jouets): toys, games, books, educational materials, puzzles, sensory toys, stuffed animals
+- 3: Jewelry (Bijoux): bracelets, necklaces, rings, earrings, brooches, chains, pendants, watches
+- 4: Other (Autre): anything that doesn't fit the above categories
+
+Respond with ONLY a valid JSON object in this exact format (no markdown, no code block, no preamble):
+{"category": number, "categoryName": "string"}`;
+
+    try {
+      const raw = await this.callModelWithImage(prompt, imageBase64);
+      const cleaned = raw
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim();
+      const parsed = JSON.parse(cleaned);
+      const cat = typeof parsed.category === 'number' ? parsed.category : 0;
+      const validCat = cat >= 0 && cat <= 4 ? cat : 0;
+      const name = typeof parsed.categoryName === 'string' ? parsed.categoryName : 'Vêtements';
+      return { category: validCat, categoryName: name };
+    } catch (e) {
+      this.logger.warn(`Image classification failed: ${(e as Error).message}`);
+      return { category: 0, categoryName: 'Vêtements' };
+    }
+  }
+
+  private async callModelWithImage(prompt: string, imageBase64: string): Promise<string> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    
+    const payload = {
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            {
+              inline_data: {
+                mime_type: 'image/jpeg',
+                data: imageBase64,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error('No text in Gemini response');
+    return text;
   }
 
   private parseResponse(raw: string): LlmRecommendation {
