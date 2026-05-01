@@ -66,7 +66,3 @@ export class ClassifyDonationDto {
   text: string;
 }
 
-export class ClassifyDonationImageDto {
-  @IsString()
-  imageBase64: string;
-}
