@@ -78,6 +78,7 @@ export class DonationsService {
       title: dto.title,
       description: dto.description,
       category: dto.category,
+      customCategory: dto.customCategory,
       condition: dto.condition,
       location: dto.location,
       latitude: dto.latitude,

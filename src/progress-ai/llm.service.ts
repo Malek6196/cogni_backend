@@ -216,6 +216,57 @@ Rules:
     );
   }
 
+  /**
+   * Classifie une description de produit dans une catégorie de don.
+   * Retourne: { category: number, categoryName: string, customCategory?: string }
+   * category: 0=Vêtements, 1=Mobilier, 2=Jouets/Matériel d'éveil, 3=Autre
+   */
+  async classifyDonationCategory(text: string): Promise<{
+    category: number;
+    categoryName: string;
+    customCategory?: string;
+  }> {
+    if (!this.apiKey) {
+      return { category: 3, categoryName: 'Autre' };
+    }
+    const prompt = `You are a product classifier for a donation platform helping families with special needs children.
+Classify the following item description into ONE of these categories:
+- 0: Clothing/Accessories (Vêtements/Accessoires): clothes, shoes, jewelry, bags, watches, accessories, scarves, hats, belts
+- 1: Furniture/Equipment (Mobilier/Équipement): furniture, beds, chairs, tables, shelves, medical equipment, appliances, electronics
+- 2: Toys/Learning Materials (Jouets/Matériel d'éveil): toys, games, books, educational materials, puzzles, sensory toys, stuffed animals
+- 3: Other (Autre): anything that doesn't fit the above categories
+
+Item description: "${text.slice(0, 200)}"
+
+Respond with ONLY a valid JSON object in this exact format (no markdown, no code block, no preamble):
+{"category": number, "categoryName": "string", "customCategory": "string (optional, only if category is 3, describe what it is in French)"}
+
+Examples:
+- "bracelet en or" → {"category": 0, "categoryName": "Vêtements/Accessoires", "customCategory": "Bijoux"}
+- "lit médicalisé" → {"category": 1, "categoryName": "Mobilier/Équipement"}
+- "puzzle sensoriel" → {"category": 2, "categoryName": "Jouets/Matériel d'éveil"}
+- "cartable" → {"category": 0, "categoryName": "Vêtements/Accessoires", "customCategory": "Sacs/Accessoires"}`;
+
+    try {
+      const raw = await this.callModel(prompt);
+      const cleaned = raw
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim();
+      const parsed = JSON.parse(cleaned);
+      const cat = typeof parsed.category === 'number' ? parsed.category : 3;
+      const validCat = cat >= 0 && cat <= 3 ? cat : 3;
+      const name = typeof parsed.categoryName === 'string' ? parsed.categoryName : 'Autre';
+      const custom = typeof parsed.customCategory === 'string' && parsed.customCategory.trim()
+        ? parsed.customCategory.trim()
+        : undefined;
+      return { category: validCat, categoryName: name, customCategory: custom };
+    } catch (e) {
+      this.logger.warn(`Classification failed for "${text.slice(0, 50)}": ${(e as Error).message}`);
+      return { category: 3, categoryName: 'Autre' };
+    }
+  }
+
   private parseResponse(raw: string): LlmRecommendation {
     try {
       const cleaned = raw

@@ -16,12 +16,17 @@ export class CreateDonationDto {
   @IsString()
   description: string;
 
-  /** 0: Vêtements, 1: Mobilier, 2: Matériel d'éveil */
+  /** 0: Vêtements, 1: Mobilier, 2: Matériel d'éveil, 3: Autre */
   @IsNumber()
   @Min(0)
-  @Max(2)
+  @Max(3)
   @Type(() => Number)
   category: number;
+
+  /** Catégorie personnalisée (quand category = 3) */
+  @IsOptional()
+  @IsString()
+  customCategory?: string;
 
   /** 0: Neuf, 1: Très bon état, 2: Bon état */
   @IsNumber()
@@ -58,4 +63,9 @@ export class CreateDonationDto {
   @IsArray()
   @IsString({ each: true })
   imageUrls?: string[];
+}
+
+export class ClassifyDonationDto {
+  @IsString()
+  text: string;
 }

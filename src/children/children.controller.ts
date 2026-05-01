@@ -12,7 +12,6 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ChildrenService } from './children.service';
-import type { SpecialistPatientSummaryResponse } from './children.service';
 import { AddChildDto } from './dto/add-child.dto';
 import { CreateFamilyDto } from '../organization/dto/create-family.dto';
 
@@ -54,31 +53,30 @@ export class ChildrenController {
   @Get('specialist/my-children')
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('psychologist', 'speech_therapist', 'occupational_therapist', 'doctor')
+  @Roles(
+    'psychologist',
+    'speech_therapist',
+    'occupational_therapist',
+    'doctor',
+    'volunteer',
+    'other',
+  )
   @ApiOperation({ summary: 'Get private children added by this specialist' })
   async getSpecialistChildren(@Request() req: any) {
     return this.childrenService.findBySpecialistId(req.user.id as string);
   }
 
-  @Get('specialist/my-patients')
-  @ApiBearerAuth('JWT-auth')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('psychologist', 'speech_therapist', 'occupational_therapist', 'doctor')
-  @ApiOperation({
-    summary: 'Get specialist-assigned patients with progress summary',
-  })
-  async getSpecialistPatients(
-    @Request() req: any,
-  ): Promise<SpecialistPatientSummaryResponse[]> {
-    return this.childrenService.findBySpecialistIdWithProgress(
-      req.user.id as string,
-    );
-  }
-
   @Post('specialist/add-child')
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('psychologist', 'speech_therapist', 'occupational_therapist', 'doctor')
+  @Roles(
+    'psychologist',
+    'speech_therapist',
+    'occupational_therapist',
+    'doctor',
+    'volunteer',
+    'other',
+  )
   @ApiOperation({ summary: 'Add a private child (specialist only)' })
   async addSpecialistChild(@Request() req: any, @Body() body: AddChildDto) {
     return this.childrenService.createForSpecialist(
@@ -90,7 +88,14 @@ export class ChildrenController {
   @Post('specialist/add-family')
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('psychologist', 'speech_therapist', 'occupational_therapist', 'doctor')
+  @Roles(
+    'psychologist',
+    'speech_therapist',
+    'occupational_therapist',
+    'doctor',
+    'volunteer',
+    'other',
+  )
   @ApiOperation({
     summary: 'Add a private family and their children (specialist only)',
   })

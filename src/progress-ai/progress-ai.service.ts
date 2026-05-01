@@ -528,14 +528,21 @@ export class ProgressAiService {
   ): Promise<ParentFeedback> {
     const child = await this.childModel.findById(childId).lean().exec();
     if (!child) throw new NotFoundException('Child not found');
-    if (
-      (child as { parentId?: { toString(): string } }).parentId?.toString() !==
-      parentUserId
-    ) {
+
+    const childParentId = (child as { parentId?: { toString(): string } }).parentId?.toString();
+    
+    // Log for debugging
+    this.logger.log(`Parent feedback attempt - childId: ${childId}, childParentId: ${childParentId}, parentUserId: ${parentUserId}`);
+
+    if (childParentId !== parentUserId) {
+      this.logger.warn(
+        `Unauthorized feedback attempt: child parentId (${childParentId}) does not match requesting user (${parentUserId})`,
+      );
       throw new ForbiddenException(
         'Not authorized to submit feedback for this child',
       );
     }
+
     const doc = new this.parentFeedbackModel({
       childId: new Types.ObjectId(childId),
       parentId: new Types.ObjectId(parentUserId),
@@ -543,7 +550,15 @@ export class ProgressAiService {
       comment: payload.comment,
       planType: payload.planType,
     });
-    return await doc.save();
+    
+    try {
+      const saved = await doc.save();
+      this.logger.log(`Parent feedback saved successfully for child ${childId}`);
+      return saved;
+    } catch (error) {
+      this.logger.error(`Failed to save parent feedback: ${error}`);
+      throw error;
+    }
   }
 
   /**
@@ -574,6 +589,76 @@ export class ProgressAiService {
       .limit(limit)
       .lean()
       .exec()) as ParentFeedback[];
+  }
+
+  /**
+   * Delete a parent feedback entry.
+   * Verifies child.parentId === parentUserId and feedback belongs to the parent.
+   */
+  async deleteParentFeedback(
+    childId: string,
+    feedbackId: string,
+    parentUserId: string,
+  ): Promise<void> {
+    const child = await this.childModel.findById(childId).lean().exec();
+    if (!child) throw new NotFoundException('Child not found');
+
+    const childParentId = (child as { parentId?: { toString(): string } }).parentId?.toString();
+    if (childParentId !== parentUserId) {
+      throw new ForbiddenException(
+        'Not authorized to delete feedback for this child',
+      );
+    }
+
+    const feedback = await this.parentFeedbackModel.findById(feedbackId).lean().exec();
+    if (!feedback) throw new NotFoundException('Feedback not found');
+
+    if ((feedback as { parentId?: Types.ObjectId }).parentId?.toString() !== parentUserId) {
+      throw new ForbiddenException(
+        'Not authorized to delete this feedback',
+      );
+    }
+
+    await this.parentFeedbackModel.findByIdAndDelete(feedbackId).exec();
+    this.logger.log(`Parent feedback deleted: ${feedbackId}`);
+  }
+
+  /**
+   * Update a parent feedback entry.
+   * Verifies child.parentId === parentUserId and feedback belongs to the parent.
+   */
+  async updateParentFeedback(
+    childId: string,
+    feedbackId: string,
+    parentUserId: string,
+    payload: { rating: number; comment?: string; planType?: string },
+  ): Promise<ParentFeedback> {
+    const child = await this.childModel.findById(childId).lean().exec();
+    if (!child) throw new NotFoundException('Child not found');
+
+    const childParentId = (child as { parentId?: { toString(): string } }).parentId?.toString();
+    if (childParentId !== parentUserId) {
+      throw new ForbiddenException(
+        'Not authorized to update feedback for this child',
+      );
+    }
+
+    const feedback = await this.parentFeedbackModel.findById(feedbackId).exec();
+    if (!feedback) throw new NotFoundException('Feedback not found');
+
+    if ((feedback as { parentId?: Types.ObjectId }).parentId?.toString() !== parentUserId) {
+      throw new ForbiddenException(
+        'Not authorized to update this feedback',
+      );
+    }
+
+    feedback.rating = payload.rating;
+    if (payload.comment !== undefined) feedback.comment = payload.comment;
+    if (payload.planType !== undefined) feedback.planType = payload.planType;
+    
+    const updated = await feedback.save();
+    this.logger.log(`Parent feedback updated: ${feedbackId}`);
+    return updated;
   }
 
   /**

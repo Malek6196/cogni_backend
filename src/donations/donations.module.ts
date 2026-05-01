@@ -4,6 +4,7 @@ import { Donation, DonationSchema } from './schemas/donation.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { DonationsService } from './donations.service';
 import { DonationsController } from './donations.controller';
+import { LlmService } from '../progress-ai/llm.service';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { DonationsController } from './donations.controller';
     ]),
   ],
   controllers: [DonationsController],
-  providers: [DonationsService],
+  providers: [DonationsService, LlmService],
   exports: [DonationsService],
 })
 export class DonationsModule {}

@@ -671,6 +671,17 @@ export class VolunteersService {
     if (!app.certificationCertificateUrl) {
       throw new NotFoundException('Certificate is not available yet.');
     }
+
+    // Get user info for certificate display
+    const user = await this.userModel
+      .findById(userId)
+      .select('fullName')
+      .lean()
+      .exec();
+
+    // Get certificate dynamic fields (supervisor, quiz score, etc.)
+    const certData = await this._getCertificateDynamicFields(userId, app);
+
     return {
       certificateUrl: app.certificationCertificateUrl,
       certificateId: app.certificationCertificateId,
@@ -678,6 +689,13 @@ export class VolunteersService {
         app.certificationIssuedAt?.toISOString() ??
         app.trainingCertifiedAt?.toISOString(),
       generatedAt: app.updatedAt?.toISOString(),
+      userName: user?.fullName || 'User Name',
+      quizScore:
+        certData.quizScorePercent !== undefined
+          ? `${certData.quizScorePercent}%`
+          : undefined,
+      supervisorName: certData.supervisorName,
+      organizationName: app.organizationName,
     };
   }
 

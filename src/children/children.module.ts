@@ -9,7 +9,6 @@ import {
 import { ChildrenService } from './children.service';
 import { ChildrenController } from './children.controller';
 import { ChildAccessService } from './child-access.service';
-import { SpecializedPlansModule } from '../specialized-plans/specialized-plans.module';
 
 import { OrganizationModule } from '../organization/organization.module';
 
@@ -21,7 +20,6 @@ import { OrganizationModule } from '../organization/organization.module';
       { name: Organization.name, schema: OrganizationSchema },
     ]),
     OrganizationModule,
-    SpecializedPlansModule,
   ],
   controllers: [ChildrenController],
   providers: [ChildrenService, ChildAccessService],

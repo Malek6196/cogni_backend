@@ -15,7 +15,6 @@ import {
 import { OrganizationService } from '../organization/organization.service';
 import { AddChildDto } from './dto/add-child.dto';
 import { CreateFamilyDto } from '../organization/dto/create-family.dto';
-import { SpecializedPlansService } from '../specialized-plans/specialized-plans.service';
 
 interface UserLean {
   _id?: Types.ObjectId;
@@ -39,18 +38,6 @@ interface ChildLean {
   medications?: string;
   notes?: string;
   parentId?: Types.ObjectId;
-  organizationId?: Types.ObjectId;
-}
-
-export interface SpecialistPatientSummaryResponse {
-  id: string;
-  fullName: string;
-  dateOfBirth: string;
-  gender: string;
-  diagnosis: string | undefined;
-  progressPercent: number;
-  activePlansCount: number;
-  lastUpdatedAt: string | undefined;
 }
 
 @Injectable()
@@ -61,7 +48,6 @@ export class ChildrenService {
     @InjectModel(Organization.name)
     private organizationModel: Model<OrganizationDocument>,
     private organizationService: OrganizationService,
-    private specializedPlansService: SpecializedPlansService,
   ) {}
 
   /**
@@ -192,91 +178,6 @@ export class ChildrenService {
       diagnosis: c.diagnosis,
       notes: c.notes,
     }));
-  }
-
-  async findBySpecialistIdWithProgress(
-    specialistId: string,
-  ): Promise<SpecialistPatientSummaryResponse[]> {
-    const children = (await this.childModel
-      .find({
-        specialistId: new Types.ObjectId(specialistId),
-        deletedAt: { $exists: false },
-      })
-      .sort({ updatedAt: -1, createdAt: -1 })
-      .lean()
-      .exec()) as ChildLean[];
-    const assignedChildren = children.filter(
-      (child): child is ChildLean & { _id: Types.ObjectId } =>
-        Boolean(child._id),
-    );
-
-    const childIds = assignedChildren.map((child) => child._id.toString());
-    const activePlans = await this.specializedPlansService.getPlansByChildIds(
-      childIds,
-    );
-    const plansByChildId = new Map<
-      string,
-      Array<{
-        type: string;
-        content?: Record<string, unknown>;
-        updatedAt?: Date;
-      }>
-    >();
-    for (const plan of activePlans as Array<{
-      childId?: Types.ObjectId | string;
-      type: string;
-      content?: Record<string, unknown>;
-      updatedAt?: Date;
-    }>) {
-      const childId = plan.childId?.toString?.() ?? '';
-      if (!childId) {
-        continue;
-      }
-      const entries = plansByChildId.get(childId) ?? [];
-      entries.push({
-        type: plan.type,
-        content: plan.content,
-        updatedAt: plan.updatedAt,
-      });
-      plansByChildId.set(childId, entries);
-    }
-
-    const summaries = assignedChildren.map((child) => {
-      const childId = child._id.toString();
-      const childPlans = plansByChildId.get(childId) ?? [];
-      const totalProgress = childPlans.reduce((sum, plan) => {
-        return (
-          sum +
-          SpecializedPlansService.progressPercent({
-            type: plan.type,
-            content: plan.content,
-          })
-        );
-      }, 0);
-      const progressPercent =
-        childPlans.length > 0 ? Math.round(totalProgress / childPlans.length) : 0;
-      const lastUpdatedAt = childPlans
-        .map((plan) => plan.updatedAt)
-        .filter((value): value is Date => value instanceof Date)
-        .sort((a, b) => b.getTime() - a.getTime())[0]
-        ?.toISOString();
-
-      return {
-        id: childId,
-        fullName: child.fullName ?? '',
-        dateOfBirth:
-          child.dateOfBirth instanceof Date
-            ? child.dateOfBirth.toISOString().slice(0, 10)
-            : (child.dateOfBirth ?? ''),
-        gender: child.gender ?? '',
-        diagnosis: child.diagnosis,
-        progressPercent,
-        activePlansCount: childPlans.length,
-        lastUpdatedAt,
-      };
-    });
-
-    return summaries;
   }
 
   async createForSpecialist(specialistId: string, dto: AddChildDto) {

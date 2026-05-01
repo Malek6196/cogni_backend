@@ -43,6 +43,7 @@ import { FamilyDailyScheduleModule } from './family-daily-schedule/family-daily-
 import { ConsultationSlotsModule } from './consultation-slots/consultation-slots.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { AdminSeoModule } from './admin-seo/admin-seo.module';
+import { SupportTicketsModule } from './support-tickets/support-tickets.module';
 
 const metricsEnabled = process.env.METRICS_ENABLED === 'true';
 
@@ -116,6 +117,7 @@ const metricsEnabled = process.env.METRICS_ENABLED === 'true';
     ConsultationSlotsModule,
     AppointmentsModule,
     AdminSeoModule,
+    SupportTicketsModule,
   ],
   controllers: [AppController],
   providers: [

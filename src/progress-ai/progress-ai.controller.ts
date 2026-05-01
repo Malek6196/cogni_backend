@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -279,6 +280,42 @@ export class ProgressAiController {
       childId,
       req.user.id,
       limitNum,
+    );
+  }
+
+  @Delete('child/:childId/parent-feedback/:feedbackId')
+  @Roles('family')
+  @ApiOperation({ summary: 'Delete a parent feedback entry' })
+  async deleteParentFeedback(
+    @Request() req: { user: { id: string } },
+    @Param('childId') childId: string,
+    @Param('feedbackId') feedbackId: string,
+  ) {
+    return await this.progressAiService.deleteParentFeedback(
+      childId,
+      feedbackId,
+      req.user.id,
+    );
+  }
+
+  @Patch('child/:childId/parent-feedback/:feedbackId')
+  @Roles('family')
+  @ApiOperation({ summary: 'Update a parent feedback entry' })
+  async updateParentFeedback(
+    @Request() req: { user: { id: string } },
+    @Param('childId') childId: string,
+    @Param('feedbackId') feedbackId: string,
+    @Body() dto: SubmitParentFeedbackDto,
+  ) {
+    return await this.progressAiService.updateParentFeedback(
+      childId,
+      feedbackId,
+      req.user.id,
+      {
+        rating: dto.rating,
+        comment: dto.comment,
+        planType: dto.planType,
+      },
     );
   }
 }
