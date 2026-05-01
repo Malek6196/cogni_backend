@@ -13,12 +13,13 @@ import {
 } from './common/config/runtime-security.util';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
   
-  // Increase body parser limit for image classification
-  const bodyParser = await import('body-parser');
-  app.use(bodyParser.json({ limit: '10mb' }));
-  app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+  // Increase body parser limit for image classification (10MB for base64 images)
+  const express = await import('express');
+  const ex = (express as any).default || express;
+  app.use(ex.json({ limit: '10mb' }));
+  app.use(ex.urlencoded({ limit: '10mb', extended: true }));
   const productionMode = isProductionEnvironment();
   const swaggerEnabled = isSwaggerEnabled();
   const metricsEnabled = process.env.METRICS_ENABLED === 'true';
@@ -40,10 +41,9 @@ async function bootstrap() {
 
   // Serve uploaded files (e.g. profile pictures, post images, voice .m4a) at /uploads
   const uploadsPath = join(process.cwd(), 'uploads');
-  const express = await import('express');
   app.use(
     '/uploads',
-    express.default.static(uploadsPath, {
+    ex.static(uploadsPath, {
       index: false,
       setHeaders: (
         res: { setHeader: (name: string, value: string) => void },
