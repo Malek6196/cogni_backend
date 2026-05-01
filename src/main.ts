@@ -14,6 +14,11 @@ import {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  
+  // Increase body parser limit for image classification
+  const bodyParser = await import('body-parser');
+  app.use(bodyParser.json({ limit: '10mb' }));
+  app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
   const productionMode = isProductionEnvironment();
   const swaggerEnabled = isSwaggerEnabled();
   const metricsEnabled = process.env.METRICS_ENABLED === 'true';
