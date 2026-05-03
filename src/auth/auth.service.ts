@@ -3,12 +3,11 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
-  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import {
@@ -41,8 +40,6 @@ import { SocialTokenVerifierService } from './social-token-verifier.service';
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
-
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private cloudinary: CloudinaryService,
@@ -77,10 +74,6 @@ export class AuthService {
   private async hashRefreshToken(refreshToken: string): Promise<string> {
     const saltRounds = 10;
     return bcrypt.hash(refreshToken, saltRounds);
-  }
-
-  private hashLogValue(value: string): string {
-    return createHash('sha256').update(value).digest('hex').slice(0, 12);
   }
 
   async signup(
@@ -194,7 +187,7 @@ export class AuthService {
       // Upload certificate PDF to Cloudinary
       let certificateUrl: string;
       try {
-        this.logger.log('[SIGNUP] Uploading certificate PDF to Cloudinary');
+        console.log('[SIGNUP] Uploading certificate PDF to Cloudinary');
         certificateUrl = await this.cloudinary.uploadRawBuffer(
           certificatePdfBuffer,
           {
@@ -203,13 +196,11 @@ export class AuthService {
             resourceType: 'raw',
           },
         );
-        this.logger.log('[SIGNUP] Certificate uploaded');
+        console.log('[SIGNUP] Certificate uploaded:', certificateUrl);
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-        this.logger.error(
-          `[SIGNUP] Failed to upload certificate: ${errorMessage}`,
-        );
+        console.error('[SIGNUP] Failed to upload certificate:', errorMessage);
         throw new BadRequestException(
           'Failed to upload organization certificate. Please try again.',
         );
@@ -223,23 +214,16 @@ export class AuthService {
           certificateUrl,
         );
 
-      this.logger.log('[SIGNUP] Organization leader signup requires approval');
-      this.logger.log(
-        `[SIGNUP] Pending organization created id=${this.hashLogValue(pendingOrganization._id.toString())}`,
+      console.log(
+        '[SIGNUP] Organization leader signup - NOT generating tokens',
       );
+      console.log('[SIGNUP] Pending organization ID:', pendingOrganization._id);
 
       // Trigger AI fraud analysis with certificate PDF
       try {
-<<<<<<< Updated upstream
-        this.logger.log(
-          '[SIGNUP] Triggering AI fraud analysis for certificate',
-        );
-        const analysisInput: AnalysisInput = {
-=======
         console.log('[SIGNUP] Triggering AI fraud analysis for certificate');
         const analysisInput = {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-call
->>>>>>> Stashed changes
           organizationId: pendingOrganization._id.toString(),
           pdfBuffer: certificatePdfBuffer,
           email: user.email,
@@ -249,14 +233,18 @@ export class AuthService {
         const fraudAnalysis =
           await this.fraudAnalysisService.analyzeOrganization(analysisInput);
 
-        this.logger.log(
-          `[SIGNUP] Fraud analysis completed risk=${fraudAnalysis.level}`,
+        console.log(
+          '[SIGNUP] Fraud analysis completed. Risk level:',
+          fraudAnalysis.level,
+          'Score:',
+          fraudAnalysis.fraudRisk,
         );
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-        this.logger.error(
-          `[SIGNUP] Failed to perform fraud analysis: ${errorMessage}`,
+        console.error(
+          '[SIGNUP] Failed to perform fraud analysis:',
+          errorMessage,
         );
         // Don't fail signup if fraud analysis fails - admin can review manually
       }
@@ -293,10 +281,7 @@ export class AuthService {
     // Send welcome email (non-blocking)
     this.mailService
       .sendWelcomeEmail(user.email, user.fullName)
-      .catch((err: unknown) => {
-        const errorMessage = err instanceof Error ? err.message : 'Unknown';
-        this.logger.warn(`Failed to send welcome email: ${errorMessage}`);
-      });
+      .catch((err) => console.error('Failed to send welcome email:', err));
 
     const userResponse: any = {
       id: user._id,
@@ -1041,20 +1026,23 @@ export class AuthService {
     user.confirmationToken = undefined;
     await user.save();
 
-    this.logger.log(
-      `[ACTIVATE] User confirmed id=${this.hashLogValue(user._id.toString())}. Linking to organization...`,
+    console.log(
+      `[ACTIVATE] User ${user.email} confirmed. Linking to organization...`,
     );
 
     // Link user to organization and update invitation status
     // We throw error here if link fails to notify the user/frontend
     try {
       await this.organizationService.acceptInvitation(token);
-      this.logger.log('[ACTIVATE] Success: Joined organization');
+      console.log(
+        `[ACTIVATE] Success: Joined organization for token ${token.substring(0, 10)}...`,
+      );
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(
-        `[ACTIVATE] Error linking to organization: ${errorMessage}`,
+      console.error(
+        `[ACTIVATE] Error linking to organization for token ${token.substring(0, 10)}...:`,
+        errorMessage,
       );
       // If invitation is not found but user already has organizationId, it might be already processed
       if (!user.organizationId) {
