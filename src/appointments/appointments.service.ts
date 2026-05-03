@@ -45,23 +45,7 @@ export class AppointmentsService {
     userFullName: string,
     dto: CreateAppointmentDto,
   ): Promise<any> {
-    if (dto.childId) {
-      const child = await this.childModel
-        .findById(dto.childId)
-        .select('parentId fullName')
-        .lean()
-        .exec();
-      if (!child) throw new NotFoundException('Child not found');
-      const parentId = (child as unknown as { parentId?: Types.ObjectId })
-        .parentId;
-      if (!parentId || parentId.toString() !== userId) {
-        throw new ForbiddenException('You can only book for your own child');
-      }
-      if (!dto.childName || dto.childName.trim() === '') {
-        dto.childName =
-          (child as unknown as { fullName?: string }).fullName ?? undefined;
-      }
-    }
+    const resolvedChild = await this.resolveBookedChild(userId, dto);
 
     const lockedSlot = await this.slotsService.lockSlot(dto.slotId);
     if (!lockedSlot) {
@@ -84,8 +68,8 @@ export class AppointmentsService {
       reason: dto.reason,
       preferredLanguage: dto.preferredLanguage ?? 'fr',
       notes: dto.notes,
-      childId: dto.childId ? new Types.ObjectId(dto.childId) : undefined,
-      childName: dto.childName,
+      childId: resolvedChild.childId,
+      childName: resolvedChild.childName,
       mode: dto.mode ?? lockedSlot.mode ?? 'both',
       bookingRef,
       confirmationSent: false,
@@ -123,10 +107,16 @@ export class AppointmentsService {
         type: 'appointment_new',
         title: 'Nouveau rendez-vous',
         description:
-          dto.childName?.trim() != null && dto.childName.trim() != ''
-            ? `Nouveau rendez-vous pour ${dto.childName} le ${lockedSlot.date} à ${lockedSlot.startTime}`
-            : `Nouveau rendez-vous réservé le ${lockedSlot.date} à ${lockedSlot.startTime}`,
-        data: { appointmentId: doc._id.toString(), bookingRef },
+          resolvedChild.childName != null && resolvedChild.childName.length > 0
+            ? `Nouveau rendez-vous pris par ${userFullName} pour ${resolvedChild.childName} le ${lockedSlot.date} à ${lockedSlot.startTime}`
+            : `Nouveau rendez-vous pris par ${userFullName} le ${lockedSlot.date} à ${lockedSlot.startTime}`,
+        data: {
+          appointmentId: doc._id.toString(),
+          bookingRef,
+          childId: resolvedChild.childId?.toString(),
+          childName: resolvedChild.childName,
+          requesterName: userFullName,
+        },
       },
     );
 
@@ -152,6 +142,70 @@ export class AppointmentsService {
     });
 
     return formatted;
+  }
+
+  private async resolveBookedChild(
+    userId: string,
+    dto: CreateAppointmentDto,
+  ): Promise<{
+    childId?: Types.ObjectId;
+    childName?: string;
+  }> {
+    if (dto.childId) {
+      const child = await this.childModel
+        .findById(dto.childId)
+        .select('parentId fullName')
+        .lean()
+        .exec();
+      if (!child) throw new NotFoundException('Child not found');
+      const parentId = (child as unknown as { parentId?: Types.ObjectId })
+        .parentId;
+      if (!parentId || parentId.toString() !== userId) {
+        throw new ForbiddenException('You can only book for your own child');
+      }
+      return {
+        childId: (child as unknown as { _id?: Types.ObjectId })._id,
+        childName:
+          dto.childName != null && dto.childName.trim().length > 0
+            ? dto.childName.trim()
+            : ((child as unknown as { fullName?: string }).fullName ??
+              undefined),
+      };
+    }
+
+    const familyChildren = (await this.childModel
+      .find({ parentId: new Types.ObjectId(userId) })
+      .select('_id fullName')
+      .sort({ createdAt: 1 })
+      .limit(2)
+      .lean()
+      .exec()) as Array<{
+      _id?: Types.ObjectId;
+      fullName?: string;
+    }>;
+
+    if (familyChildren.length === 1) {
+      return {
+        childId: familyChildren[0]._id,
+        childName:
+          dto.childName != null && dto.childName.trim().length > 0
+            ? dto.childName.trim()
+            : familyChildren[0].fullName,
+      };
+    }
+
+    if (familyChildren.length > 1) {
+      throw new BadRequestException(
+        'Please select which child this consultation is for',
+      );
+    }
+
+    return {
+      childName:
+        dto.childName != null && dto.childName.trim().length > 0
+          ? dto.childName.trim()
+          : undefined,
+    };
   }
 
   /** Cancel an appointment */

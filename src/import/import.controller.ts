@@ -208,8 +208,12 @@ export class ImportController {
       file.buffer?.subarray(0, 2).toString('utf8') === 'PK';
     const isCsv =
       originalname.endsWith('.csv') &&
-      ['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel']
-        .includes(mimetype) &&
+      [
+        'text/csv',
+        'text/plain',
+        'application/csv',
+        'application/vnd.ms-excel',
+      ].includes(mimetype) &&
       !file.buffer?.includes(0);
 
     if (!isXlsx && !isCsv) {

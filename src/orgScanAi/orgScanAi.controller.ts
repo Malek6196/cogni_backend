@@ -407,7 +407,9 @@ export class OrgScanAiController {
         },
       });
       pdfBuffer = Buffer.from(response.data);
-      this.logger.log(`[RESCAN] Downloaded PDF buffer size=${pdfBuffer.length}`);
+      this.logger.log(
+        `[RESCAN] Downloaded PDF buffer size=${pdfBuffer.length}`,
+      );
 
       // Validate PDF header (should start with %PDF-)
       const pdfHeader = pdfBuffer.toString('utf8', 0, 5);
@@ -441,7 +443,9 @@ export class OrgScanAiController {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`[RESCAN] Failed to download certificate: ${errorMessage}`);
+      this.logger.error(
+        `[RESCAN] Failed to download certificate: ${errorMessage}`,
+      );
       if (error instanceof BadRequestException) {
         throw error;
       }

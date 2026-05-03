@@ -46,9 +46,9 @@ describe('runtime security util', () => {
 
   it('rejects placeholder production JWT secrets', () => {
     process.env.NODE_ENV = 'production';
-    expect(() => getJwtSecret('development-only-jwt-secret-that-is-long')).toThrow(
-      'JWT_SECRET must not use a placeholder value in production.',
-    );
+    expect(() =>
+      getJwtSecret('development-only-jwt-secret-that-is-long'),
+    ).toThrow('JWT_SECRET must not use a placeholder value in production.');
   });
 
   it('rejects missing message encryption key in production', () => {
@@ -63,7 +63,9 @@ describe('runtime security util', () => {
   });
 
   it('uses a local MongoDB fallback outside production', () => {
-    expect(getMongoDbUri(undefined)).toBe('mongodb://localhost:27017/cognicare');
+    expect(getMongoDbUri(undefined)).toBe(
+      'mongodb://localhost:27017/cognicare',
+    );
   });
 
   it('rejects missing production CORS origins', () => {

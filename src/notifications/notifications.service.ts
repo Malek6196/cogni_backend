@@ -5,6 +5,11 @@ import {
   Notification,
   NotificationDocument,
 } from './schemas/notification.schema';
+import {
+  Appointment,
+  AppointmentDocument,
+} from '../appointments/schemas/appointment.schema';
+import { User, UserDocument } from '../users/schemas/user.schema';
 import { ChildrenService } from '../children/children.service';
 import { RemindersService } from '../nutrition/reminders.service';
 
@@ -15,6 +20,10 @@ export class NotificationsService {
   constructor(
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<NotificationDocument>,
+    @InjectModel(Appointment.name)
+    private readonly appointmentModel: Model<AppointmentDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly childrenService: ChildrenService,
     private readonly remindersService: RemindersService,
   ) {}
@@ -149,6 +158,99 @@ export class NotificationsService {
           }
         }
       }
+    }
+  }
+
+  async syncProviderAppointmentNotifications(userId: string): Promise<void> {
+    const existing = await this.notificationModel
+      .find({
+        userId: new Types.ObjectId(userId),
+        type: 'appointment_new',
+      })
+      .select('data.appointmentId')
+      .lean()
+      .exec();
+
+    const existingAppointmentIds = new Set(
+      (existing as Array<{ data?: { appointmentId?: string } }>)
+        .map((notification) => notification.data?.appointmentId)
+        .filter(
+          (appointmentId): appointmentId is string =>
+            typeof appointmentId === 'string' && appointmentId.length > 0,
+        ),
+    );
+
+    const appointments = await this.appointmentModel
+      .find({
+        providerId: new Types.ObjectId(userId),
+        status: { $ne: 'cancelled' },
+      })
+      .select('_id userId childName date startTime')
+      .sort({ createdAt: -1 })
+      .limit(25)
+      .lean()
+      .exec();
+
+    const appointmentRows = appointments as Array<{
+      _id?: Types.ObjectId;
+      userId?: Types.ObjectId;
+      childName?: string;
+      date?: string;
+      startTime?: string;
+    }>;
+
+    const requesterIds = Array.from(
+      new Set(
+        appointmentRows
+          .map((appointment) => appointment.userId?.toString())
+          .filter((value): value is string => typeof value === 'string'),
+      ),
+    );
+
+    const requesters = await this.userModel
+      .find({
+        _id: { $in: requesterIds.map((id) => new Types.ObjectId(id)) },
+      })
+      .select('fullName')
+      .lean()
+      .exec();
+
+    const requesterNameById = new Map<string, string>();
+    for (const requester of requesters as Array<{
+      _id?: Types.ObjectId;
+      fullName?: string;
+    }>) {
+      if (requester._id) {
+        requesterNameById.set(
+          requester._id.toString(),
+          requester.fullName ?? 'Un parent',
+        );
+      }
+    }
+
+    for (const appointment of appointmentRows) {
+      const appointmentId = appointment._id?.toString();
+      if (!appointmentId || existingAppointmentIds.has(appointmentId)) continue;
+
+      const requesterName = appointment.userId
+        ? (requesterNameById.get(appointment.userId.toString()) ?? 'Un parent')
+        : 'Un parent';
+      const childName = appointment.childName?.trim();
+
+      await this.createForUser(userId, {
+        type: 'appointment_new',
+        title: 'Nouveau rendez-vous',
+        description:
+          childName != null && childName.length > 0
+            ? `Nouveau rendez-vous pris par ${requesterName} pour ${childName} le ${appointment.date} à ${appointment.startTime}`
+            : `Nouveau rendez-vous pris par ${requesterName} le ${appointment.date} à ${appointment.startTime}`,
+        data: {
+          appointmentId,
+          childName,
+          requesterName,
+        },
+      });
+      existingAppointmentIds.add(appointmentId);
     }
   }
 }

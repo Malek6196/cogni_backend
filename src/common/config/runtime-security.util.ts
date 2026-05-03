@@ -108,8 +108,8 @@ export function getMongoDbUri(
 
   if (
     isProductionEnvironment() &&
-    (!resolved.startsWith('mongodb://') &&
-      !resolved.startsWith('mongodb+srv://'))
+    !resolved.startsWith('mongodb://') &&
+    !resolved.startsWith('mongodb+srv://')
   ) {
     throw new Error(
       'MONGODB_URI must be a valid MongoDB connection string in production.',
@@ -144,12 +144,12 @@ export function getConfiguredCorsOrigins(
   if (isProductionEnvironment()) {
     for (const origin of origins) {
       if (!origin.startsWith('https://')) {
-        throw new Error(
-          'CORS_ORIGIN entries must use https:// in production.',
-        );
+        throw new Error('CORS_ORIGIN entries must use https:// in production.');
       }
       if (origin.includes('*')) {
-        throw new Error('CORS_ORIGIN must not contain wildcards in production.');
+        throw new Error(
+          'CORS_ORIGIN must not contain wildcards in production.',
+        );
       }
     }
   }

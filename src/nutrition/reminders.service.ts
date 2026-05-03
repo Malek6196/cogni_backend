@@ -20,6 +20,9 @@ import { MedicationVerificationService } from '../health/medication-verification
 import { ReminderType } from './schemas/task-reminder.schema';
 import { ChildAccessService } from '../children/child-access.service';
 
+const PROOF_IMAGES_PUBLIC_PREFIX = '/uploads/proof-images/';
+const PROOF_IMAGES_PROTECTED_PREFIX = '/api/v1/reminders/proof-images/';
+
 @Injectable()
 export class RemindersService {
   private readonly logger = new Logger(RemindersService.name);
@@ -224,7 +227,7 @@ export class RemindersService {
       fs.writeFileSync(filepath, proofImage.buffer);
 
       // Store relative path
-      proofImagePath = `/uploads/proof-images/${filename}`;
+      proofImagePath = `${PROOF_IMAGES_PUBLIC_PREFIX}${filename}`;
     }
 
     // Find existing completion for this date
@@ -308,7 +311,48 @@ export class RemindersService {
         ? 'Task marked as completed with proof'
         : 'Task marked as incomplete',
       reminder: this.formatReminder(reminder),
-      proofImageUrl: proofImagePath,
+      proofImageUrl: this.protectedProofImageUrl(proofImagePath),
+    };
+  }
+
+  async getProofImageFile(
+    filename: string,
+    userId: string,
+  ): Promise<{ path: string; mimeType: string }> {
+    const safeFilename = path.basename(filename);
+    if (safeFilename !== filename) {
+      throw new BadRequestException('Invalid proof image filename');
+    }
+
+    const legacyUrl = `${PROOF_IMAGES_PUBLIC_PREFIX}${safeFilename}`;
+    const protectedUrl = `${PROOF_IMAGES_PROTECTED_PREFIX}${safeFilename}`;
+    const reminder = await this.taskReminderModel
+      .findOne({
+        'completionHistory.proofImageUrl': { $in: [legacyUrl, protectedUrl] },
+      })
+      .exec();
+    if (!reminder) {
+      throw new NotFoundException('Proof image not found');
+    }
+
+    await this.childAccessService.assertCanAccessChild(
+      reminder.childId.toString(),
+      userId,
+    );
+
+    const filePath = path.join(
+      process.cwd(),
+      'uploads',
+      'proof-images',
+      safeFilename,
+    );
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException('Proof image file not found');
+    }
+
+    return {
+      path: filePath,
+      mimeType: this.mimeTypeForProofImage(safeFilename),
     };
   }
 
@@ -427,12 +471,27 @@ export class RemindersService {
         completed: c.completed,
         completedAt: c.completedAt,
         feedback: c.feedback,
-        proofImageUrl: c.proofImageUrl,
+        proofImageUrl: this.protectedProofImageUrl(c.proofImageUrl),
         verificationStatus: c.verificationStatus,
         verificationMetadata: c.verificationMetadata,
       })),
       createdAt: reminder.createdAt,
       updatedAt: reminder.updatedAt,
     };
+  }
+
+  private protectedProofImageUrl(url?: string): string | undefined {
+    if (!url) return undefined;
+    if (url.startsWith(PROOF_IMAGES_PUBLIC_PREFIX)) {
+      return `${PROOF_IMAGES_PROTECTED_PREFIX}${path.basename(url)}`;
+    }
+    return url;
+  }
+
+  private mimeTypeForProofImage(filename: string): string {
+    const ext = path.extname(filename).toLowerCase();
+    if (ext === '.png') return 'image/png';
+    if (ext === '.webp') return 'image/webp';
+    return 'image/jpeg';
   }
 }

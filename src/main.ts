@@ -45,16 +45,20 @@ async function bootstrap() {
     ).set('trust proxy', 1);
   }
 
-  // Serve uploaded files (e.g. profile pictures, post images, voice .m4a) at /uploads
+  // Serve only intentionally public uploaded files at /uploads.
+  // Sensitive assets must go through authenticated API routes.
   const uploadsPath = join(process.cwd(), 'uploads');
-  app.use(
-    '/uploads/chat',
-    (_req: unknown, res: { status: (code: number) => { end: () => void } }) => {
-      res.status(404).end();
-    },
-  );
+  const denySensitiveUpload = (
+    _req: unknown,
+    res: { status: (code: number) => { end: () => void } },
+  ) => res.status(404).end();
+  app.use('/uploads/chat', denySensitiveUpload);
+  app.use('/uploads/volunteers', denySensitiveUpload);
+  app.use('/uploads/proof-images', denySensitiveUpload);
+  app.use('/uploads/certificates', denySensitiveUpload);
   app.use(
     '/uploads',
+
     ex.static(uploadsPath, {
       index: false,
       setHeaders: (

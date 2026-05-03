@@ -122,7 +122,7 @@ export class MailMockService {
     return Promise.resolve();
   }
 
-  async sendOrgLeaderInvitation(
+  sendOrgLeaderInvitation(
     email: string,
     _leaderName: string,
     _organizationName: string,

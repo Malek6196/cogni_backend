@@ -233,7 +233,9 @@ export class ChildrenService {
 
   /**
    * Specialist patients (from real bookings).
-   * Source of truth: appointments where providerId = specialistId and childId is set.
+   * Source of truth: appointments where providerId = specialistId.
+   * Legacy appointments without childId are backfilled from the family's children
+   * when the mapping is unambiguous.
    *
    * Privacy: returns only minimal child identity + parent's display name (no PII beyond names).
    */
@@ -243,25 +245,94 @@ export class ChildrenService {
     const appts = await this.appointmentModel
       .find({
         providerId: new Types.ObjectId(specialistId),
-        childId: { $exists: true, $ne: null },
         status: { $ne: 'cancelled' },
       })
-      .select('childId')
+      .select('childId childName userId')
       .lean()
       .exec();
 
-    const childIds = Array.from(
-      new Set(
-        (appts as unknown as { childId?: Types.ObjectId }[])
-          .map((a) => a.childId?.toString())
-          .filter(Boolean) as string[],
-      ),
-    );
-    if (childIds.length === 0) return [];
+    const appointmentRows = appts as unknown as Array<{
+      childId?: Types.ObjectId;
+      childName?: string;
+      userId?: Types.ObjectId;
+    }>;
+
+    const childIds = new Set<string>();
+    const legacyAppointments: Array<{
+      childName?: string;
+      userId: string;
+    }> = [];
+
+    for (const appointment of appointmentRows) {
+      const childId = appointment.childId?.toString();
+      if (childId) {
+        childIds.add(childId);
+        continue;
+      }
+      const userId = appointment.userId?.toString();
+      if (userId) {
+        legacyAppointments.push({
+          childName: appointment.childName,
+          userId,
+        });
+      }
+    }
+
+    if (legacyAppointments.length > 0) {
+      const parentIds = Array.from(
+        new Set(legacyAppointments.map((appointment) => appointment.userId)),
+      );
+      const legacyChildren = (await this.childModel
+        .find({
+          parentId: { $in: parentIds.map((id) => new Types.ObjectId(id)) },
+          deletedAt: { $exists: false },
+        })
+        .select('_id fullName parentId')
+        .lean()
+        .exec()) as ChildLean[];
+
+      const childrenByParentId = new Map<string, ChildLean[]>();
+      for (const child of legacyChildren) {
+        const parentId = child.parentId?.toString();
+        if (!parentId) continue;
+        const list = childrenByParentId.get(parentId) ?? [];
+        list.push(child);
+        childrenByParentId.set(parentId, list);
+      }
+
+      for (const appointment of legacyAppointments) {
+        const parentChildren = childrenByParentId.get(appointment.userId) ?? [];
+        if (parentChildren.length === 1) {
+          const onlyChildId = parentChildren[0]._id?.toString();
+          if (onlyChildId) childIds.add(onlyChildId);
+          continue;
+        }
+
+        const normalizedBookedName = appointment.childName
+          ?.trim()
+          .toLowerCase();
+        if (!normalizedBookedName) continue;
+        let matchingChildId: string | undefined;
+        for (const child of parentChildren) {
+          if (
+            (child.fullName ?? '').trim().toLowerCase() === normalizedBookedName
+          ) {
+            matchingChildId = child._id?.toString();
+            break;
+          }
+        }
+        if (matchingChildId) {
+          childIds.add(matchingChildId);
+        }
+      }
+    }
+
+    const uniqueChildIds = Array.from(childIds);
+    if (uniqueChildIds.length === 0) return [];
 
     const children = (await this.childModel
       .find({
-        _id: { $in: childIds.map((id) => new Types.ObjectId(id)) },
+        _id: { $in: uniqueChildIds.map((id) => new Types.ObjectId(id)) },
         deletedAt: { $exists: false },
       })
       .select('fullName dateOfBirth parentId')

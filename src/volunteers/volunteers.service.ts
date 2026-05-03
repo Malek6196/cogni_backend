@@ -44,6 +44,11 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
 const ALLOWED_PDF_MIME = 'application/pdf';
 const ALLOWED_MIMES = [...ALLOWED_IMAGE_MIMES, ALLOWED_PDF_MIME];
+const VOLUNTEER_DOCUMENTS_PUBLIC_PREFIX = '/uploads/volunteers/';
+const VOLUNTEER_DOCUMENTS_PROTECTED_PREFIX =
+  '/api/v1/volunteers/application/documents/file/';
+const CAREGIVER_CERTIFICATE_PROTECTED_URL =
+  '/api/v1/volunteers/application/my-certificate/download';
 const DEFAULT_CERT_TEMPLATE_PATH = path.join(
   process.cwd(),
   'assets',
@@ -596,7 +601,7 @@ export class VolunteersService {
       const filename = `vol_${userId}_${type}_${Date.now()}.${ext}`;
       const filePath = path.join(uploadsDir, filename);
       await fs.writeFile(filePath, file.buffer);
-      url = `/uploads/volunteers/${filename}`;
+      url = `${VOLUNTEER_DOCUMENTS_PROTECTED_PREFIX}${filename}`;
     }
 
     const docPublicId = `vol_${userId}_${type}_${Date.now()}`;
@@ -610,6 +615,47 @@ export class VolunteersService {
     });
     await app.save();
     return this.getOrCreateApplication(userId);
+  }
+
+  async getApplicationDocumentFile(
+    requester: { id: string; role?: string },
+    filename: string,
+  ): Promise<{ path: string; mimeType: string }> {
+    const safeFilename = path.basename(filename);
+    if (safeFilename !== filename) {
+      throw new BadRequestException('Invalid document filename');
+    }
+
+    const legacyUrl = `${VOLUNTEER_DOCUMENTS_PUBLIC_PREFIX}${safeFilename}`;
+    const protectedUrl = `${VOLUNTEER_DOCUMENTS_PROTECTED_PREFIX}${safeFilename}`;
+    const query: Record<string, unknown> = {
+      'documents.url': { $in: [legacyUrl, protectedUrl] },
+    };
+    if (requester.role !== 'admin') {
+      query.userId = new Types.ObjectId(requester.id);
+    }
+
+    const app = await this.applicationModel.findOne(query).lean().exec();
+    if (!app) {
+      throw new NotFoundException('Document not found');
+    }
+
+    const filePath = path.join(
+      process.cwd(),
+      'uploads',
+      'volunteers',
+      safeFilename,
+    );
+    try {
+      await fs.access(filePath);
+    } catch {
+      throw new NotFoundException('Document file not found');
+    }
+
+    return {
+      path: filePath,
+      mimeType: this.mimeTypeForProtectedAsset(safeFilename),
+    };
   }
 
   /**
@@ -683,7 +729,9 @@ export class VolunteersService {
     const certData = await this._getCertificateDynamicFields(userId, app);
 
     return {
-      certificateUrl: app.certificationCertificateUrl,
+      certificateUrl: this.protectedCertificateUrl(
+        app.certificationCertificateUrl,
+      ),
       certificateId: app.certificationCertificateId,
       issuedAt:
         app.certificationIssuedAt?.toISOString() ??
@@ -1345,11 +1393,12 @@ export class VolunteersService {
     pdfBuffer: Buffer,
   ): Promise<string> {
     if (this.cloudinary.isConfigured()) {
-      return this.cloudinary.uploadRawBuffer(pdfBuffer, {
+      await this.cloudinary.uploadRawBuffer(pdfBuffer, {
         folder: 'cognicare/certificates',
         publicId: `caregiver_certificate_${userId}_${Date.now()}`,
         resourceType: 'raw',
       });
+      return CAREGIVER_CERTIFICATE_PROTECTED_URL;
     }
 
     const uploadsDir = path.join(process.cwd(), 'uploads', 'certificates');
@@ -1358,7 +1407,7 @@ export class VolunteersService {
     const filename = `${safeId}.pdf`;
     const filePath = path.join(uploadsDir, filename);
     await fs.writeFile(filePath, pdfBuffer);
-    return `/uploads/certificates/${filename}`;
+    return CAREGIVER_CERTIFICATE_PROTECTED_URL;
   }
 
   private async _fileExists(filePath: string): Promise<boolean> {
@@ -1507,11 +1556,13 @@ export class VolunteersService {
       competencies,
       organizationName: app.organizationName,
       organizationRole: app.organizationRole,
-      documents: app.documents ?? [],
+      documents: this.normalizeDocumentUrls(app.documents ?? []),
       profileComplete,
       trainingCertified: app.trainingCertified ?? false,
       trainingCertifiedAt: app.trainingCertifiedAt,
-      certificationCertificateUrl: app.certificationCertificateUrl,
+      certificationCertificateUrl: this.protectedCertificateUrl(
+        app.certificationCertificateUrl as string | undefined,
+      ),
       certificationCertificateId: app.certificationCertificateId,
       certificationIssuedAt: app.certificationIssuedAt,
       deniedReason: app.deniedReason,
@@ -1524,6 +1575,32 @@ export class VolunteersService {
       doc.user = userIdRaw;
     }
     return doc;
+  }
+
+  private normalizeDocumentUrls(documents: unknown): unknown[] {
+    if (!Array.isArray(documents)) return [];
+    return documents.map((document: unknown) => {
+      if (!document || typeof document !== 'object') return document;
+      const doc = { ...(document as Record<string, unknown>) };
+      const url = doc.url?.toString() ?? '';
+      if (url.startsWith(VOLUNTEER_DOCUMENTS_PUBLIC_PREFIX)) {
+        doc.url = `${VOLUNTEER_DOCUMENTS_PROTECTED_PREFIX}${path.basename(url)}`;
+      }
+      return doc;
+    });
+  }
+
+  private protectedCertificateUrl(url?: string): string | undefined {
+    if (!url) return undefined;
+    return CAREGIVER_CERTIFICATE_PROTECTED_URL;
+  }
+
+  private mimeTypeForProtectedAsset(filename: string): string {
+    const ext = path.extname(filename).toLowerCase();
+    if (ext === '.pdf') return 'application/pdf';
+    if (ext === '.png') return 'image/png';
+    if (ext === '.webp') return 'image/webp';
+    return 'image/jpeg';
   }
 
   /**
