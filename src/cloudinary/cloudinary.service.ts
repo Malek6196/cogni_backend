@@ -207,7 +207,7 @@ export class CloudinaryService {
         },
         (err, result) => {
           if (err) {
-            reject(this.toError(err, 'Cloudinary upload failed'));
+            reject(new Error(`Cloudinary upload failed: ${err.message || err}`));
             return;
           }
           if (!result?.public_id) {
