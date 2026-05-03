@@ -58,12 +58,37 @@ export class ChildrenController {
     'speech_therapist',
     'occupational_therapist',
     'doctor',
-    'volunteer',
-    'other',
+    'ergotherapist',
   )
   @ApiOperation({ summary: 'Get private children added by this specialist' })
   async getSpecialistChildren(@Request() req: any) {
     return this.childrenService.findBySpecialistId(req.user.id as string);
+  }
+
+  @Get('specialist/my-patients')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(
+    'careProvider',
+    'psychologist',
+    'speech_therapist',
+    'occupational_therapist',
+    'doctor',
+    'ergotherapist',
+  )
+  @ApiOperation({
+    summary:
+      'Get my patients (children) from real bookings (appointments) - specialist only',
+  })
+  async getMyPatients(@Request() req: any): Promise<unknown> {
+    if ((req.user.role as string) === 'careProvider') {
+      await this.childrenService.assertCareProviderIsSpecialist(
+        req.user.id as string,
+      );
+    }
+    return this.childrenService.listPatientsForSpecialistFromAppointments(
+      req.user.id as string,
+    );
   }
 
   @Post('specialist/add-child')
@@ -74,8 +99,7 @@ export class ChildrenController {
     'speech_therapist',
     'occupational_therapist',
     'doctor',
-    'volunteer',
-    'other',
+    'ergotherapist',
   )
   @ApiOperation({ summary: 'Add a private child (specialist only)' })
   async addSpecialistChild(@Request() req: any, @Body() body: AddChildDto) {
@@ -93,8 +117,7 @@ export class ChildrenController {
     'speech_therapist',
     'occupational_therapist',
     'doctor',
-    'volunteer',
-    'other',
+    'ergotherapist',
   )
   @ApiOperation({
     summary: 'Add a private family and their children (specialist only)',

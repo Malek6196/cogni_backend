@@ -19,7 +19,10 @@ export class CreateDonationDto {
   @IsString()
   description: string;
 
-  @ApiProperty({ description: 'Catégorie du don (0=Vêtements, 1=Mobilier, 2=Jouets, 3=Bijoux, 4=Autre)' })
+  @ApiProperty({
+    description:
+      'Catégorie du don (0=Vêtements, 1=Mobilier, 2=Jouets, 3=Bijoux, 4=Autre)',
+  })
   @IsInt()
   @IsIn([0, 1, 2, 3, 4])
   category: number;
@@ -65,4 +68,3 @@ export class ClassifyDonationDto {
   @IsString()
   text: string;
 }
-

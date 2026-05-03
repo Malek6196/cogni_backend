@@ -529,10 +529,14 @@ export class ProgressAiService {
     const child = await this.childModel.findById(childId).lean().exec();
     if (!child) throw new NotFoundException('Child not found');
 
-    const childParentId = (child as { parentId?: { toString(): string } }).parentId?.toString();
-    
+    const childParentId = (
+      child as { parentId?: { toString(): string } }
+    ).parentId?.toString();
+
     // Log for debugging
-    this.logger.log(`Parent feedback attempt - childId: ${childId}, childParentId: ${childParentId}, parentUserId: ${parentUserId}`);
+    this.logger.log(
+      `Parent feedback attempt - childId: ${childId}, childParentId: ${childParentId}, parentUserId: ${parentUserId}`,
+    );
 
     if (childParentId !== parentUserId) {
       this.logger.warn(
@@ -550,10 +554,12 @@ export class ProgressAiService {
       comment: payload.comment,
       planType: payload.planType,
     });
-    
+
     try {
       const saved = await doc.save();
-      this.logger.log(`Parent feedback saved successfully for child ${childId}`);
+      this.logger.log(
+        `Parent feedback saved successfully for child ${childId}`,
+      );
       return saved;
     } catch (error) {
       this.logger.error(`Failed to save parent feedback: ${error}`);
@@ -603,20 +609,26 @@ export class ProgressAiService {
     const child = await this.childModel.findById(childId).lean().exec();
     if (!child) throw new NotFoundException('Child not found');
 
-    const childParentId = (child as { parentId?: { toString(): string } }).parentId?.toString();
+    const childParentId = (
+      child as { parentId?: { toString(): string } }
+    ).parentId?.toString();
     if (childParentId !== parentUserId) {
       throw new ForbiddenException(
         'Not authorized to delete feedback for this child',
       );
     }
 
-    const feedback = await this.parentFeedbackModel.findById(feedbackId).lean().exec();
+    const feedback = await this.parentFeedbackModel
+      .findById(feedbackId)
+      .lean()
+      .exec();
     if (!feedback) throw new NotFoundException('Feedback not found');
 
-    if ((feedback as { parentId?: Types.ObjectId }).parentId?.toString() !== parentUserId) {
-      throw new ForbiddenException(
-        'Not authorized to delete this feedback',
-      );
+    if (
+      (feedback as { parentId?: Types.ObjectId }).parentId?.toString() !==
+      parentUserId
+    ) {
+      throw new ForbiddenException('Not authorized to delete this feedback');
     }
 
     await this.parentFeedbackModel.findByIdAndDelete(feedbackId).exec();
@@ -636,7 +648,9 @@ export class ProgressAiService {
     const child = await this.childModel.findById(childId).lean().exec();
     if (!child) throw new NotFoundException('Child not found');
 
-    const childParentId = (child as { parentId?: { toString(): string } }).parentId?.toString();
+    const childParentId = (
+      child as { parentId?: { toString(): string } }
+    ).parentId?.toString();
     if (childParentId !== parentUserId) {
       throw new ForbiddenException(
         'Not authorized to update feedback for this child',
@@ -646,16 +660,17 @@ export class ProgressAiService {
     const feedback = await this.parentFeedbackModel.findById(feedbackId).exec();
     if (!feedback) throw new NotFoundException('Feedback not found');
 
-    if ((feedback as { parentId?: Types.ObjectId }).parentId?.toString() !== parentUserId) {
-      throw new ForbiddenException(
-        'Not authorized to update this feedback',
-      );
+    if (
+      (feedback as { parentId?: Types.ObjectId }).parentId?.toString() !==
+      parentUserId
+    ) {
+      throw new ForbiddenException('Not authorized to update this feedback');
     }
 
     feedback.rating = payload.rating;
     if (payload.comment !== undefined) feedback.comment = payload.comment;
     if (payload.planType !== undefined) feedback.planType = payload.planType;
-    
+
     const updated = await feedback.save();
     this.logger.log(`Parent feedback updated: ${feedbackId}`);
     return updated;

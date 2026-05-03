@@ -57,9 +57,17 @@ export class SupportTicketsController {
     @UploadedFile() file?: { buffer: Buffer; mimetype: string },
   ): Promise<{ url: string }> {
     if (!file?.buffer) throw new BadRequestException('No file provided');
-    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+    const allowed = [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'application/pdf',
+    ];
     if (!allowed.includes(file.mimetype)) {
-      throw new BadRequestException('Only images (JPEG, PNG, GIF, WebP) and PDF files are allowed');
+      throw new BadRequestException(
+        'Only images (JPEG, PNG, GIF, WebP) and PDF files are allowed',
+      );
     }
     let url: string;
     if (file.mimetype === 'application/pdf') {
@@ -92,9 +100,7 @@ export class SupportTicketsController {
   @Get('my-tickets')
   @ApiOperation({ summary: "Get the logged-in user's tickets" })
   @ApiResponse({ status: 200, description: 'List of tickets' })
-  async getMyTickets(
-    @Request() req: { user: { id: string } },
-  ) {
+  async getMyTickets(@Request() req: { user: { id: string } }) {
     return this.service.findMyTickets(req.user.id);
   }
 

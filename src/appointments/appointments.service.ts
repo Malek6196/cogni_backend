@@ -13,6 +13,7 @@ import {
   AppointmentDocument,
   AppointmentStatus,
 } from './schemas/appointment.schema';
+import { Child, ChildDocument } from '../children/schemas/child.schema';
 import {
   CancelAppointmentDto,
   CompleteAppointmentDto,
@@ -29,6 +30,8 @@ export class AppointmentsService {
   constructor(
     @InjectModel(Appointment.name)
     private readonly appointmentModel: Model<AppointmentDocument>,
+    @InjectModel(Child.name)
+    private readonly childModel: Model<ChildDocument>,
     private readonly slotsService: ConsultationSlotsService,
     private readonly notificationsService: NotificationsService,
     private readonly mailService: MailService,
@@ -42,6 +45,24 @@ export class AppointmentsService {
     userFullName: string,
     dto: CreateAppointmentDto,
   ): Promise<any> {
+    if (dto.childId) {
+      const child = await this.childModel
+        .findById(dto.childId)
+        .select('parentId fullName')
+        .lean()
+        .exec();
+      if (!child) throw new NotFoundException('Child not found');
+      const parentId = (child as unknown as { parentId?: Types.ObjectId })
+        .parentId;
+      if (!parentId || parentId.toString() !== userId) {
+        throw new ForbiddenException('You can only book for your own child');
+      }
+      if (!dto.childName || dto.childName.trim() === '') {
+        dto.childName =
+          (child as unknown as { fullName?: string }).fullName ?? undefined;
+      }
+    }
+
     const lockedSlot = await this.slotsService.lockSlot(dto.slotId);
     if (!lockedSlot) {
       throw new ConflictException(
@@ -101,7 +122,10 @@ export class AppointmentsService {
       {
         type: 'appointment_new',
         title: 'Nouveau rendez-vous',
-        description: `Nouveau rendez-vous réservé le ${lockedSlot.date} à ${lockedSlot.startTime}`,
+        description:
+          dto.childName?.trim() != null && dto.childName.trim() != ''
+            ? `Nouveau rendez-vous pour ${dto.childName} le ${lockedSlot.date} à ${lockedSlot.startTime}`
+            : `Nouveau rendez-vous réservé le ${lockedSlot.date} à ${lockedSlot.startTime}`,
         data: { appointmentId: doc._id.toString(), bookingRef },
       },
     );

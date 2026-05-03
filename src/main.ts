@@ -14,10 +14,15 @@ import {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  
+
   // Increase body parser limit for image classification (10MB for base64 images)
-  const express = await import('express');
-  const ex = (express as any).default || express;
+  type ExpressModule = typeof import('express');
+  const expressMod = (await import('express')) as unknown as
+    | ExpressModule
+    | { default: ExpressModule };
+  const ex: ExpressModule =
+    (expressMod as { default?: ExpressModule }).default ??
+    (expressMod as ExpressModule);
   app.use(ex.json({ limit: '10mb' }));
   app.use(ex.urlencoded({ limit: '10mb', extended: true }));
   const productionMode = isProductionEnvironment();

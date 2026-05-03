@@ -9,6 +9,10 @@ import { Model, Types } from 'mongoose';
 import { Child, ChildDocument } from './schemas/child.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import {
+  Appointment,
+  AppointmentDocument,
+} from '../appointments/schemas/appointment.schema';
+import {
   Organization,
   OrganizationDocument,
 } from '../organization/schemas/organization.schema';
@@ -40,6 +44,22 @@ interface ChildLean {
   parentId?: Types.ObjectId;
 }
 
+interface ProviderPatientLean {
+  id: string;
+  fullName: string;
+  dateOfBirth: string;
+  parentId?: string;
+  parentFullName?: string;
+}
+
+const _specialistCareProviderTypes = new Set([
+  'speech_therapist',
+  'occupational_therapist',
+  'psychologist',
+  'doctor',
+  'ergotherapist',
+]);
+
 @Injectable()
 export class ChildrenService {
   constructor(
@@ -47,6 +67,8 @@ export class ChildrenService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Organization.name)
     private organizationModel: Model<OrganizationDocument>,
+    @InjectModel(Appointment.name)
+    private appointmentModel: Model<AppointmentDocument>,
     private organizationService: OrganizationService,
   ) {}
 
@@ -207,5 +229,100 @@ export class ChildrenService {
 
   async createPrivateFamily(specialistId: string, dto: CreateFamilyDto) {
     return this.organizationService.createFamilyMember(null, dto, specialistId);
+  }
+
+  /**
+   * Specialist patients (from real bookings).
+   * Source of truth: appointments where providerId = specialistId and childId is set.
+   *
+   * Privacy: returns only minimal child identity + parent's display name (no PII beyond names).
+   */
+  async listPatientsForSpecialistFromAppointments(
+    specialistId: string,
+  ): Promise<ProviderPatientLean[]> {
+    const appts = await this.appointmentModel
+      .find({
+        providerId: new Types.ObjectId(specialistId),
+        childId: { $exists: true, $ne: null },
+        status: { $ne: 'cancelled' },
+      })
+      .select('childId')
+      .lean()
+      .exec();
+
+    const childIds = Array.from(
+      new Set(
+        (appts as unknown as { childId?: Types.ObjectId }[])
+          .map((a) => a.childId?.toString())
+          .filter(Boolean) as string[],
+      ),
+    );
+    if (childIds.length === 0) return [];
+
+    const children = (await this.childModel
+      .find({
+        _id: { $in: childIds.map((id) => new Types.ObjectId(id)) },
+        deletedAt: { $exists: false },
+      })
+      .select('fullName dateOfBirth parentId')
+      .lean()
+      .exec()) as ChildLean[];
+
+    const parentIds = Array.from(
+      new Set(
+        children.map((c) => c.parentId?.toString()).filter(Boolean) as string[],
+      ),
+    );
+
+    const parents = await this.userModel
+      .find({ _id: { $in: parentIds.map((id) => new Types.ObjectId(id)) } })
+      .select('fullName')
+      .lean()
+      .exec();
+    const parentNameById = new Map<string, string>();
+    for (const p of parents as unknown as {
+      _id?: Types.ObjectId;
+      fullName?: string;
+    }[]) {
+      if (p._id) parentNameById.set(p._id.toString(), p.fullName ?? '');
+    }
+
+    return children
+      .map((c) => {
+        const parentId = c.parentId?.toString();
+        return {
+          id: c._id?.toString() ?? '',
+          fullName: c.fullName ?? '',
+          dateOfBirth:
+            c.dateOfBirth instanceof Date
+              ? c.dateOfBirth.toISOString().slice(0, 10)
+              : (c.dateOfBirth ?? ''),
+          parentId,
+          parentFullName: parentId ? parentNameById.get(parentId) : undefined,
+        };
+      })
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }
+
+  async assertCareProviderIsSpecialist(userId: string): Promise<void> {
+    const user = await this.userModel
+      .findById(userId)
+      .select('role careProviderType')
+      .lean()
+      .exec();
+    const lean = user as unknown as {
+      role?: string;
+      careProviderType?: string;
+    };
+    if (!lean) throw new NotFoundException('User not found');
+    if (lean.role !== 'careProvider') {
+      throw new ForbiddenException('Not a care provider account');
+    }
+    if (
+      !lean.careProviderType ||
+      !_specialistCareProviderTypes.has(lean.careProviderType)
+    ) {
+      throw new ForbiddenException('Not authorized');
+    }
   }
 }
