@@ -23,6 +23,12 @@ const PROVIDER_ROLES = [
   'organization_staff',
   'organization_leader',
   'careprovider',
+  'psychologist',
+  'speech_therapist',
+  'occupational_therapist',
+  'ergotherapist',
+  'healthcare',
+  'professional',
 ];
 
 @Injectable()
