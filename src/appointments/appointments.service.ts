@@ -92,37 +92,34 @@ export class AppointmentsService {
       endTime: lockedSlot.endTime,
     });
 
-    // Send in-app notification to user
-    await this.notificationsService.createForUser(userId, {
-      type: 'appointment_confirmed',
-      title: 'Consultation confirmée',
-      description: `Votre consultation du ${lockedSlot.date} à ${lockedSlot.startTime} a été confirmée. Réf: ${bookingRef}`,
-      data: { appointmentId: doc._id.toString(), bookingRef },
-    });
-
-    // Send in-app notification to provider
-    await this.notificationsService.createForUser(
-      lockedSlot.providerId.toString(),
-      {
-        type: 'appointment_new',
-        title: 'Nouveau rendez-vous',
-        description:
-          resolvedChild.childName != null && resolvedChild.childName.length > 0
-            ? `Nouveau rendez-vous pris par ${userFullName} pour ${resolvedChild.childName} le ${lockedSlot.date} à ${lockedSlot.startTime}`
-            : `Nouveau rendez-vous pris par ${userFullName} le ${lockedSlot.date} à ${lockedSlot.startTime}`,
-        data: {
-          appointmentId: doc._id.toString(),
-          bookingRef,
-          childId: resolvedChild.childId?.toString(),
-          childName: resolvedChild.childName,
-          requesterName: userFullName,
+    // Best-effort side effects must not block the booking response.
+    void Promise.allSettled([
+      this.notificationsService.createForUser(userId, {
+        type: 'appointment_confirmed',
+        title: 'Consultation confirmée',
+        description: `Votre consultation du ${lockedSlot.date} à ${lockedSlot.startTime} a été confirmée. Réf: ${bookingRef}`,
+        data: { appointmentId: doc._id.toString(), bookingRef },
+      }),
+      this.notificationsService.createForUser(
+        lockedSlot.providerId.toString(),
+        {
+          type: 'appointment_new',
+          title: 'Nouveau rendez-vous',
+          description:
+            resolvedChild.childName != null &&
+            resolvedChild.childName.length > 0
+              ? `Nouveau rendez-vous pris par ${userFullName} pour ${resolvedChild.childName} le ${lockedSlot.date} à ${lockedSlot.startTime}`
+              : `Nouveau rendez-vous pris par ${userFullName} le ${lockedSlot.date} à ${lockedSlot.startTime}`,
+          data: {
+            appointmentId: doc._id.toString(),
+            bookingRef,
+            childId: resolvedChild.childId?.toString(),
+            childName: resolvedChild.childName,
+            requesterName: userFullName,
+          },
         },
-      },
-    );
-
-    // Send confirmation email (best-effort)
-    this.mailService
-      .sendBookingConfirmation(userEmail, {
+      ),
+      this.mailService.sendBookingConfirmation(userEmail, {
         userName: userFullName,
         bookingRef,
         date: lockedSlot.date,
@@ -132,14 +129,11 @@ export class AppointmentsService {
         providerName: (populated?.providerId as any)?.fullName ?? 'Provider',
         preferredLanguage: dto.preferredLanguage ?? 'fr',
         mode: dto.mode ?? 'both',
-      })
-      .catch(() => {
-        /* best-effort */
-      });
-
-    await this.appointmentModel.findByIdAndUpdate(doc._id, {
-      confirmationSent: true,
-    });
+      }),
+      this.appointmentModel.findByIdAndUpdate(doc._id, {
+        confirmationSent: true,
+      }),
+    ]);
 
     return formatted;
   }
