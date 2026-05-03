@@ -14,7 +14,10 @@ import {
   UseInterceptors,
   UploadedFile,
   UnauthorizedException,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import {
@@ -205,6 +208,32 @@ export class ConversationsController {
       page: resolvedPage,
       limit: resolvedLimit,
     });
+  }
+
+  @Get('attachments/:filename')
+  @Throttle({ default: { limit: 120, ttl: 60000 } })
+  @ApiOperation({ summary: 'Download a protected chat attachment' })
+  async getAttachment(
+    @Request() req: any,
+    @Param('filename') filename: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile | void> {
+    const userId = this.getCurrentUserId(req);
+    const attachment = await this.conversationsService.getChatAttachment(
+      userId,
+      filename,
+    );
+    if (attachment.kind === 'redirect') {
+      res.redirect(302, attachment.url);
+      return;
+    }
+
+    res.set({
+      'Content-Type': attachment.mimeType,
+      'Cache-Control': 'private, max-age=300',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return new StreamableFile(attachment.buffer);
   }
 
   @Post('upload')

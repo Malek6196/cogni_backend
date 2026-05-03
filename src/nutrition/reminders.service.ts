@@ -161,7 +161,7 @@ export class RemindersService {
    * Update a task reminder
    */
   async update(reminderId: string, dto: UpdateTaskReminderDto, userId: string) {
-    const reminder = await this.taskReminderModel.findById(reminderId);
+    const reminder = await this.taskReminderModel.findById(reminderId).exec();
     if (!reminder) {
       throw new NotFoundException('Reminder not found');
     }
@@ -185,7 +185,9 @@ export class RemindersService {
     userId: string,
     proofImage?: { buffer: Buffer; originalname: string },
   ) {
-    const reminder = await this.taskReminderModel.findById(dto.reminderId);
+    const reminder = await this.taskReminderModel
+      .findById(dto.reminderId)
+      .exec();
     if (!reminder) {
       throw new NotFoundException('Reminder not found');
     }
@@ -211,9 +213,11 @@ export class RemindersService {
       }
 
       const timestamp = Date.now();
-      // Sanitize filename to prevent directory traversal attacks
-      const safeName = proofImage.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-      const filename = `${reminder._id.toString()}_${timestamp}_${safeName}`;
+      const rawExtension = path.extname(proofImage.originalname).toLowerCase();
+      const safeExtension = /^\.[a-z0-9]{1,8}$/.test(rawExtension)
+        ? rawExtension
+        : '';
+      const filename = `${reminder._id.toString()}_${timestamp}_${new Types.ObjectId().toString()}${safeExtension}`;
       const filepath = path.join(uploadsDir, filename);
 
       // Save file
@@ -312,7 +316,7 @@ export class RemindersService {
    * Delete (deactivate) reminder
    */
   async delete(reminderId: string, userId: string) {
-    const reminder = await this.taskReminderModel.findById(reminderId);
+    const reminder = await this.taskReminderModel.findById(reminderId).exec();
     if (!reminder) {
       throw new NotFoundException('Reminder not found');
     }

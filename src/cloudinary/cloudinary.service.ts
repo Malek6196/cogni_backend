@@ -179,4 +179,66 @@ export class CloudinaryService {
       uploadStream.end(buffer);
     });
   }
+
+  async uploadAuthenticatedBuffer(
+    buffer: Buffer,
+    options: {
+      folder: string;
+      publicId: string;
+      resourceType: 'image' | 'video' | 'raw';
+      maxSizeBytes?: number;
+    },
+  ): Promise<{ publicId: string; resourceType: 'image' | 'video' | 'raw' }> {
+    if (!this.configured) {
+      throw new Error(
+        'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.',
+      );
+    }
+
+    this.validateFileSize(buffer, options.maxSizeBytes || 50 * 1024 * 1024);
+    const fullPublicId = `${options.folder}/${options.publicId}`;
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: options.folder,
+          public_id: options.publicId,
+          resource_type: options.resourceType,
+          type: 'authenticated',
+        },
+        (err, result) => {
+          if (err) {
+            reject(this.toError(err, 'Cloudinary upload failed'));
+            return;
+          }
+          if (!result?.public_id) {
+            reject(new Error('Cloudinary did not return a public id'));
+            return;
+          }
+          resolve({
+            publicId: result.public_id || fullPublicId,
+            resourceType: options.resourceType,
+          });
+        },
+      );
+      uploadStream.end(buffer);
+    });
+  }
+
+  createAuthenticatedUrl(
+    publicId: string,
+    resourceType: 'image' | 'video' | 'raw',
+    expiresInSeconds = 300,
+  ): string {
+    if (!this.configured) {
+      throw new Error('Cloudinary is not configured.');
+    }
+
+    return cloudinary.url(publicId, {
+      secure: true,
+      sign_url: true,
+      type: 'authenticated',
+      resource_type: resourceType,
+      expires_at: Math.floor(Date.now() / 1000) + expiresInSeconds,
+    });
+  }
 }

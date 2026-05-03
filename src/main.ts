@@ -8,6 +8,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import {
+  getConfiguredCorsOrigins,
   isProductionEnvironment,
   isSwaggerEnabled,
 } from './common/config/runtime-security.util';
@@ -47,6 +48,12 @@ async function bootstrap() {
   // Serve uploaded files (e.g. profile pictures, post images, voice .m4a) at /uploads
   const uploadsPath = join(process.cwd(), 'uploads');
   app.use(
+    '/uploads/chat',
+    (_req: unknown, res: { status: (code: number) => { end: () => void } }) => {
+      res.status(404).end();
+    },
+  );
+  app.use(
     '/uploads',
     ex.static(uploadsPath, {
       index: false,
@@ -84,16 +91,19 @@ async function bootstrap() {
 
   // Enable CORS for Flutter app and web
   const corsOriginEnv = process.env.CORS_ORIGIN;
-  const allowedOrigins = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:5173', // Web dashboard dev server (Vite)
-    'http://localhost:8080',
-    'http://localhost:54200', // Flutter web dev server
-    'http://localhost:54201',
-    'http://localhost:54202',
-    corsOriginEnv,
-  ].filter(Boolean);
+  const configuredCorsOrigins = getConfiguredCorsOrigins(corsOriginEnv);
+  const developmentOrigins = productionMode
+    ? []
+    : [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:5173', // Web dashboard dev server (Vite)
+        'http://localhost:8080',
+        'http://localhost:54200', // Flutter web dev server
+        'http://localhost:54201',
+        'http://localhost:54202',
+      ];
+  const allowedOrigins = [...developmentOrigins, ...configuredCorsOrigins];
 
   app.enableCors({
     origin: (
@@ -117,12 +127,8 @@ async function bootstrap() {
       }
 
       // Allow multiple origins from CORS_ORIGIN (comma-separated on Render)
-      if (corsOriginEnv) {
-        const list = corsOriginEnv
-          .split(',')
-          .map((o) => o.trim())
-          .filter(Boolean);
-        if (list.indexOf(origin) !== -1) {
+      if (configuredCorsOrigins.length > 0) {
+        if (configuredCorsOrigins.indexOf(origin) !== -1) {
           callback(null, true);
           return;
         }

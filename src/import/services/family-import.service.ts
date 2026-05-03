@@ -14,13 +14,17 @@ import {
   ImportPreview,
   ConfirmedMapping,
 } from '../interfaces';
-import { ExcelParserService, FAMILY_SYNONYMS } from '../utils';
+import {
+  ExcelParserService,
+  FAMILY_SYNONYMS,
+  validateImportPassword,
+} from '../utils';
 
 const FAMILY_FIELDS: FieldDefinition[] = [
   { field: 'fullName', required: true, label: 'Full Name' },
   { field: 'email', required: true, label: 'Email' },
   { field: 'phone', required: false, label: 'Phone' },
-  { field: 'password', required: false, label: 'Password' },
+  { field: 'password', required: true, label: 'Password' },
 ];
 
 @Injectable()
@@ -48,7 +52,6 @@ export class FamilyImportService {
     buffer: Buffer,
     orgId: string,
     mappings: ConfirmedMapping[],
-    defaultPassword?: string,
   ): Promise<ImportSummary> {
     const { rows } = await this.parser.parseBuffer(buffer);
     const mapped = this.parser.applyMappings(rows, mappings);
@@ -103,9 +106,13 @@ export class FamilyImportService {
       }
 
       try {
-        const password =
-          this.str(row['password']) || defaultPassword || 'CogniCare2026!';
-        const passwordHash = await bcrypt.hash(password, 12);
+        const password = this.str(row['password']);
+        const passwordError = validateImportPassword(password, rowNum);
+        if (passwordError) {
+          summary.errors.push(passwordError);
+          continue;
+        }
+        const passwordHash = await bcrypt.hash(password!, 12);
 
         const user = await this.userModel.create({
           fullName,

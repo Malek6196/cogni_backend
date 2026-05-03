@@ -1,179 +1,138 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 
 /**
- * Mock mail service for development/testing
- * Logs verification codes to console instead of sending emails
+ * Mock mail service for development/testing.
+ *
+ * Sensitive message bodies are hidden by default. Set
+ * LOG_MOCK_EMAIL_CONTENT=true outside production only when a local developer
+ * explicitly needs to copy a verification code or invitation link.
  */
 @Injectable()
 export class MailMockService {
+  private readonly logger = new Logger(MailMockService.name);
+
+  private shouldRevealContent(): boolean {
+    return (
+      process.env.NODE_ENV !== 'production' &&
+      process.env.LOG_MOCK_EMAIL_CONTENT === 'true'
+    );
+  }
+
+  private hashEmail(email: string): string {
+    return createHash('sha256').update(email).digest('hex').slice(0, 12);
+  }
+
+  private logMockEmail(
+    kind: string,
+    email: string,
+    sensitiveDetails?: Record<string, string | undefined>,
+  ): void {
+    this.logger.warn(
+      `Mock email generated kind=${kind} recipient=${this.hashEmail(email)}`,
+    );
+
+    if (!this.shouldRevealContent() || !sensitiveDetails) {
+      return;
+    }
+
+    for (const [key, value] of Object.entries(sensitiveDetails)) {
+      if (value) {
+        this.logger.warn(`Mock email detail ${key}=${value}`);
+      }
+    }
+  }
+
   sendVerificationCode(email: string, code: string): Promise<void> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(`Subject: CogniCare - Verify your email address`);
-    console.log(`\nYour verification code is: ${code}`);
-    console.log(`\nThis code will expire in 10 minutes.`);
-    console.log('='.repeat(60));
+    this.logMockEmail('verification_code', email, { code });
     return Promise.resolve();
   }
 
   sendPasswordReset(email: string, resetCode: string): Promise<void> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(`Subject: CogniCare - Reset Your Password`);
-    console.log(`\nYour password reset code is: ${resetCode}`);
-    console.log(`\nThis code will expire in 10 minutes.`);
-    console.log('='.repeat(60));
+    return this.sendPasswordResetCode(email, resetCode);
+  }
+
+  sendPasswordResetCode(email: string, resetCode: string): Promise<void> {
+    this.logMockEmail('password_reset', email, { resetCode });
     return Promise.resolve();
   }
 
   sendWelcome(email: string, fullName: string): Promise<void> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(`Subject: Welcome to CogniCare, ${fullName}!`);
-    console.log(`\nWelcome email would be sent here.`);
-    console.log('='.repeat(60));
+    return this.sendWelcomeEmail(email, fullName);
+  }
+
+  sendWelcomeEmail(email: string, _fullName: string): Promise<void> {
+    this.logMockEmail('welcome', email);
     return Promise.resolve();
   }
 
   sendOrganizationInvitation(
     email: string,
-    orgName: string,
-    userName: string,
+    _orgName: string,
+    _userName: string,
     acceptUrl: string,
     rejectUrl: string,
   ): Promise<void> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(`Subject: Invitation to join ${orgName}`);
-    console.log(`\nHello ${userName},\n`);
-    console.log(`You've been invited to join ${orgName}!`);
-    console.log(`\nAccept URL: ${acceptUrl}`);
-    console.log(`Reject URL: ${rejectUrl}`);
-    console.log('='.repeat(60));
+    this.logMockEmail('organization_invitation', email, {
+      acceptUrl,
+      rejectUrl,
+    });
     return Promise.resolve();
   }
 
   sendOrganizationPending(
     email: string,
-    orgName: string,
-    userName: string,
+    _orgName: string,
+    _userName: string,
   ): Promise<void> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(`Subject: Organization Request Pending - ${orgName}`);
-    console.log(`\nHello ${userName},\n`);
-    console.log(`Your organization ${orgName} is pending admin approval.`);
-    console.log('='.repeat(60));
+    this.logMockEmail('organization_pending', email);
     return Promise.resolve();
   }
 
   sendOrganizationApproved(
     email: string,
-    orgName: string,
-    userName: string,
+    _orgName: string,
+    _userName: string,
   ): Promise<void> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(`Subject: Organization Approved - ${orgName}`);
-    console.log(`\nHello ${userName},\n`);
-    console.log(
-      `Congratulations! Your organization ${orgName} has been approved!`,
-    );
-    console.log('='.repeat(60));
+    this.logMockEmail('organization_approved', email);
     return Promise.resolve();
   }
 
   sendOrganizationRejected(
     email: string,
-    orgName: string,
-    userName: string,
-    reason?: string,
+    _orgName: string,
+    _userName: string,
+    _reason?: string,
   ): Promise<void> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(`Subject: Organization Request Rejected - ${orgName}`);
-    console.log(`\nHello ${userName},\n`);
-    console.log(`Your organization ${orgName} was not approved.`);
-    if (reason) {
-      console.log(`\nReason: ${reason}`);
-    }
-    console.log('='.repeat(60));
+    this.logMockEmail('organization_rejected', email);
     return Promise.resolve();
   }
 
-  sendVolunteerApproved(email: string, userName: string): Promise<void> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(`Subject: Volunteer Application Approved`);
-    console.log(`\nHello ${userName},\n`);
-    console.log(
-      `Congratulations! Your volunteer application has been approved.`,
-    );
-    console.log('='.repeat(60));
+  sendVolunteerApproved(email: string, _userName: string): Promise<void> {
+    this.logMockEmail('volunteer_approved', email);
     return Promise.resolve();
   }
 
   sendVolunteerDenied(
     email: string,
-    userName: string,
-    reason?: string,
+    _userName: string,
+    _reason?: string,
   ): Promise<void> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(`Subject: Volunteer Application Update`);
-    console.log(`\nHello ${userName},\n`);
-    console.log(`Your volunteer application was not approved.`);
-    if (reason) {
-      console.log(`\nReason: ${reason}`);
-    }
-    console.log('='.repeat(60));
+    this.logMockEmail('volunteer_denied', email);
     return Promise.resolve();
   }
 
   async sendOrgLeaderInvitation(
     email: string,
-    leaderName: string,
-    organizationName: string,
+    _leaderName: string,
+    _organizationName: string,
     acceptUrl: string,
     rejectUrl: string,
   ): Promise<boolean> {
-    console.log('='.repeat(60));
-    console.log('📧 MOCK EMAIL SERVICE - Development Mode');
-    console.log('='.repeat(60));
-    console.log(`To: ${email}`);
-    console.log(
-      `Subject: CogniCare – You're Invited to Lead ${organizationName}`,
-    );
-    console.log(`\nHello ${leaderName},\n`);
-    console.log(
-      `You have been invited to become the Organization Leader for ${organizationName}!`,
-    );
-    console.log(`\nAs an Organization Leader, you will be able to:`);
-    console.log(`  • Manage staff members (doctors, therapists, volunteers)`);
-    console.log(`  • Oversee families and children in your care`);
-    console.log(`  • Access organization analytics and reports`);
-    console.log(`\nAccept Invitation: ${acceptUrl}`);
-    console.log(`Decline Invitation: ${rejectUrl}`);
-    console.log(`\nThis invitation will expire in 7 days.`);
-    console.log('='.repeat(60));
+    this.logMockEmail('org_leader_invitation', email, {
+      acceptUrl,
+      rejectUrl,
+    });
     return Promise.resolve(true);
   }
 }
