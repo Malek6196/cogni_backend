@@ -13,12 +13,31 @@ import {
   isSwaggerEnabled,
 } from './common/config/runtime-security.util';
 
+type ExpressModule = {
+  json(options: { limit: string }): unknown;
+  urlencoded(options: { limit: string; extended: boolean }): unknown;
+  static(
+    root: string,
+    options: {
+      index: boolean;
+      setHeaders: (
+        res: { setHeader: (name: string, value: string) => void },
+        path: string,
+      ) => void;
+    },
+  ): unknown;
+};
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
 
   // Increase body parser limit for image classification (10MB for base64 images)
-  const express = await import('express');
-  const ex = (express as any).default || express;
+  const expressModule = (await import('express')) as unknown as
+    | ExpressModule
+    | { default: ExpressModule };
+  const ex =
+    (expressModule as { default?: ExpressModule }).default ??
+    (expressModule as ExpressModule);
   app.use(ex.json({ limit: '10mb' }));
   app.use(ex.urlencoded({ limit: '10mb', extended: true }));
   const productionMode = isProductionEnvironment();

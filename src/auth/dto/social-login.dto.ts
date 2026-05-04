@@ -44,7 +44,7 @@ export class SocialLoginDto {
 
   @ApiPropertyOptional({
     description:
-      'Optional role to assign when creating a new account via social login. Defaults to family.',
+      'Role to assign only when creating a new social account. Existing accounts keep their stored role.',
     example: 'careProvider',
     enum: ['family', 'careProvider'],
   })

@@ -334,9 +334,15 @@ export class AuthService {
     return this.createAuthenticatedResponse(user);
   }
 
-  async socialLogin(
-    socialLoginDto: SocialLoginDto,
-  ): Promise<{ accessToken: string; refreshToken: string; user: any }> {
+  async socialLogin(socialLoginDto: SocialLoginDto): Promise<
+    | { accessToken: string; refreshToken: string; user: unknown }
+    | {
+        requiresRoleSelection: true;
+        provider: SocialProvider;
+        email: string;
+        fullName: string;
+      }
+  > {
     const verifiedIdentity =
       await this.socialTokenVerifierService.verifySocialIdToken(
         socialLoginDto.provider,
@@ -368,18 +374,28 @@ export class AuthService {
         );
       }
 
-      const randomSecret = randomBytes(48).toString('hex');
-      const passwordHash = await bcrypt.hash(randomSecret, 12);
       const resolvedFullName =
         socialLoginDto.fullName?.trim() ||
         verifiedIdentity.fullName?.trim() ||
         this.deriveDisplayNameFromEmail(verifiedIdentity.email);
 
+      if (!socialLoginDto.role) {
+        return {
+          requiresRoleSelection: true,
+          provider: verifiedIdentity.provider,
+          email: verifiedIdentity.email,
+          fullName: resolvedFullName,
+        };
+      }
+
+      const randomSecret = randomBytes(48).toString('hex');
+      const passwordHash = await bcrypt.hash(randomSecret, 12);
+
       user = new this.userModel({
         fullName: resolvedFullName,
         email: verifiedIdentity.email,
         passwordHash,
-        role: socialLoginDto.role || 'family',
+        role: socialLoginDto.role,
         isConfirmed: true,
         googleUserId: verifiedIdentity.providerUserId,
       });
