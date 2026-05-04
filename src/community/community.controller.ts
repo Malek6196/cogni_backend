@@ -149,6 +149,7 @@ export class CommunityController {
   }
 
   @Post('posts/:id/like')
+  @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 90, ttl: 60000 } })
   @ApiOperation({ summary: 'Toggle like on a post' })
   @ApiResponse({ status: 200, description: 'Like toggled' })
