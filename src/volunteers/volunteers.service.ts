@@ -79,6 +79,12 @@ const DEFAULT_CERT_TEMPLATE_JPG_PATH = path.join(
   'certificates',
   'caregiver-certificate-template.jpg',
 );
+const DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH = path.join(
+  process.cwd(),
+  'assets',
+  'certificates',
+  'program_supervisor_signature.png',
+);
 
 /** Specialist roles that have a direct careProviderType equivalent. */
 const SPECIALIST_ROLES = [
@@ -1059,6 +1065,12 @@ export class VolunteersService {
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const { width, height } = page.getSize();
+    const signatureBytes = await this._readCertificateAsset(
+      DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH,
+    );
+    const supervisorSignature = signatureBytes
+      ? await pdfDoc.embedPng(signatureBytes)
+      : null;
 
     const fullName = this._safeCertificateText(input.fullName, 80);
     const organization = this._safeCertificateText(
@@ -1161,6 +1173,14 @@ export class VolunteersService {
         font: fontRegular,
         color: textColor,
       });
+      if (supervisorSignature) {
+        page.drawImage(supervisorSignature, {
+          x: width * 0.135,
+          y: height * 0.112,
+          width: width * 0.09,
+          height: height * 0.055,
+        });
+      }
       page.drawText(authority, {
         x: width * 0.68,
         y: height * 0.182,
@@ -1229,6 +1249,21 @@ export class VolunteersService {
         font: fontRegular,
         color: footerColor,
       });
+      if (supervisorSignature) {
+        page.drawImage(supervisorSignature, {
+          x: 48,
+          y: 82,
+          width: 70,
+          height: 42,
+        });
+        page.drawText('Program Supervisor', {
+          x: 48,
+          y: 72,
+          size: 9,
+          font: fontRegular,
+          color: footerColor,
+        });
+      }
     }
 
     const bytes = await pdfDoc.save();
@@ -1269,6 +1304,8 @@ export class VolunteersService {
         : 'N/A';
 
     const rawTemplate = await fs.readFile(htmlTemplatePath, 'utf8');
+    const supervisorSignatureDataUri =
+      await this._getSupervisorSignatureDataUri();
     const html = this._renderCertificateHtml(rawTemplate, {
       fullName,
       organization,
@@ -1277,6 +1314,7 @@ export class VolunteersService {
       issueDate,
       certificateId: input.certificateId,
       quizScore: quizScoreText,
+      supervisorSignatureDataUri,
     });
 
     let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
@@ -1323,6 +1361,7 @@ export class VolunteersService {
       issueDate: string;
       certificateId: string;
       quizScore: string;
+      supervisorSignatureDataUri: string;
     },
   ): string {
     const tokens: Record<string, string> = {
@@ -1333,6 +1372,7 @@ export class VolunteersService {
       '{{ISSUE_DATE}}': this._escapeHtml(vars.issueDate),
       '{{CERTIFICATE_ID}}': this._escapeHtml(vars.certificateId),
       '{{QUIZ_SCORE}}': this._escapeHtml(vars.quizScore),
+      '{{SUPERVISOR_SIGNATURE_DATA_URI}}': vars.supervisorSignatureDataUri,
     };
 
     let rendered = template;
@@ -1349,6 +1389,24 @@ export class VolunteersService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  private async _getSupervisorSignatureDataUri(): Promise<string> {
+    const signature = await this._readCertificateAsset(
+      DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH,
+    );
+    if (!signature) return '';
+    return `data:image/png;base64,${signature.toString('base64')}`;
+  }
+
+  private async _readCertificateAsset(
+    assetPath: string,
+  ): Promise<Buffer | null> {
+    try {
+      return await fs.readFile(assetPath);
+    } catch {
+      return null;
+    }
   }
 
   private _drawCenteredText(
