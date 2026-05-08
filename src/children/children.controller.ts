@@ -1,16 +1,23 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  Param,
+  Patch,
   Post,
   Query,
   Request,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { buildImageUploadOptions } from '../common/upload/multer-upload-options';
 import { ChildrenService } from './children.service';
 import { AddChildDto } from './dto/add-child.dto';
 import { CreateFamilyDto } from '../organization/dto/create-family.dto';
@@ -129,6 +136,27 @@ export class ChildrenController {
     return this.childrenService.createPrivateFamily(
       req.user.id as string,
       body,
+    );
+  }
+
+  @Patch(':id/profile-picture')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('file', buildImageUploadOptions()))
+  @ApiOperation({ summary: 'Upload child profile picture' })
+  async uploadChildProfilePicture(
+    @Request() req: any,
+    @Param('id') childId: string,
+    @UploadedFile()
+    file?: { buffer: Buffer; mimetype: string; originalname?: string },
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+    return this.childrenService.uploadChildProfilePicture(
+      childId,
+      req.user.id as string,
+      file,
     );
   }
 }

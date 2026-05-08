@@ -17,6 +17,7 @@ import {
   OrganizationDocument,
 } from '../organization/schemas/organization.schema';
 import { OrganizationService } from '../organization/organization.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { AddChildDto } from './dto/add-child.dto';
 import { CreateFamilyDto } from '../organization/dto/create-family.dto';
 
@@ -70,6 +71,7 @@ export class ChildrenService {
     @InjectModel(Appointment.name)
     private appointmentModel: Model<AppointmentDocument>,
     private organizationService: OrganizationService,
+    private cloudinary: CloudinaryService,
   ) {}
 
   /**
@@ -395,5 +397,59 @@ export class ChildrenService {
     ) {
       throw new ForbiddenException('Not authorized');
     }
+  }
+
+  /**
+   * Upload child profile picture to Cloudinary (or local fs fallback).
+   * Only parent or org leader can update.
+   */
+  async uploadChildProfilePicture(
+    childId: string,
+    requesterId: string,
+    file: { buffer: Buffer; mimetype: string },
+  ): Promise<{ id: string; profilePicture?: string }> {
+    const child = await this.childModel.findById(childId).exec();
+    if (!child) throw new NotFoundException('Child not found');
+
+    // Authorization
+    const isParent = child.parentId?.toString() === requesterId;
+    let isOrgLeader = false;
+    if (!isParent && child.organizationId) {
+      const org = await this.organizationModel
+        .findById(child.organizationId)
+        .select('leader')
+        .lean()
+        .exec() as unknown as { leader?: Types.ObjectId } | null;
+      isOrgLeader = org?.leader?.toString() === requesterId;
+    }
+    if (!isParent && !isOrgLeader) {
+      throw new ForbiddenException('Not authorized to update this child');
+    }
+
+    let profilePicUrl: string;
+    if (this.cloudinary.isConfigured()) {
+      profilePicUrl = await this.cloudinary.uploadBuffer(file.buffer, {
+        folder: 'cognicare/children',
+        publicId: `child_${childId}`,
+      });
+    } else {
+      const path = await import('path');
+      const fs = await import('fs/promises');
+      const uploadsDir = path.join(process.cwd(), 'uploads', 'children');
+      await fs.mkdir(uploadsDir, { recursive: true });
+      const ext = file.mimetype === 'image/png' ? 'png' : 'jpg';
+      const filename = `child_${childId}.${ext}`;
+      const filePath = path.join(uploadsDir, filename);
+      await fs.writeFile(filePath, file.buffer);
+      profilePicUrl = `/uploads/children/${filename}`;
+    }
+
+    child.profilePicture = profilePicUrl;
+    await child.save();
+
+    return {
+      id: (child._id as { toString(): string }).toString(),
+      profilePicture: child.profilePicture,
+    };
   }
 }

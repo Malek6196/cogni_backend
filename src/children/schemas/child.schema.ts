@@ -32,6 +32,9 @@ export class Child {
   @Prop()
   notes?: string;
 
+  @Prop()
+  profilePicture?: string;
+
   @Prop({ type: Types.ObjectId, ref: 'User' })
   parentId?: Types.ObjectId;
 

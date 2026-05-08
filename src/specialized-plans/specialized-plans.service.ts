@@ -227,9 +227,10 @@ export class SpecializedPlansService {
 
   async getPlansBySpecialist(specialistId: string): Promise<SpecializedPlan[]> {
     return this.planModel
-      .find({ specialistId })
+      .find({ specialistId: new Types.ObjectId(specialistId) })
       .populate('childId')
-      .sort({ updatedAt: -1 });
+      .sort({ updatedAt: -1 })
+      .exec();
   }
 
   async updatePlan(
