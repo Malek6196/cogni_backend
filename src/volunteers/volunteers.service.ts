@@ -79,12 +79,6 @@ const DEFAULT_CERT_TEMPLATE_JPG_PATH = path.join(
   'certificates',
   'caregiver-certificate-template.jpg',
 );
-const DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH = path.join(
-  process.cwd(),
-  'assets',
-  'certificates',
-  'program_supervisor_signature.png',
-);
 
 /** Specialist roles that have a direct careProviderType equivalent. */
 const SPECIALIST_ROLES = [
@@ -239,7 +233,7 @@ export class VolunteersService {
     private readonly mail: MailService,
     private readonly coursesService: CoursesService,
     private readonly notifications: NotificationsService,
-  ) { }
+  ) {}
 
   async getProfileSummary(
     userId: string,
@@ -277,14 +271,14 @@ export class VolunteersService {
 
     const userProfile = userDoc
       ? {
-        role: userDoc.role,
-        careProviderType: userDoc.careProviderType,
-      }
+          role: userDoc.role,
+          careProviderType: userDoc.careProviderType,
+        }
       : null;
     const applicationProfile = applicationDoc
       ? {
-        careProviderType: applicationDoc.careProviderType,
-      }
+          careProviderType: applicationDoc.careProviderType,
+        }
       : null;
     const includesVolunteerTasks = isCaregiverProfile(
       userProfile,
@@ -293,10 +287,10 @@ export class VolunteersService {
 
     const taskDocs = includesVolunteerTasks
       ? await this.volunteerTaskModel
-        .find({ volunteerId: objectId, status: 'completed' })
-        .select('status completedAt createdAt')
-        .lean()
-        .exec()
+          .find({ volunteerId: objectId, status: 'completed' })
+          .select('status completedAt createdAt')
+          .lean()
+          .exec()
       : [];
 
     const enrollmentDocs = await this.courseEnrollmentModel
@@ -393,10 +387,10 @@ export class VolunteersService {
       .exec();
     const user = userDoc
       ? {
-        role: userDoc.role,
-        careProviderType: userDoc.careProviderType,
-        specialty: userDoc.specialty,
-      }
+          role: userDoc.role,
+          careProviderType: userDoc.careProviderType,
+          specialty: userDoc.specialty,
+        }
       : null;
 
     const appDoc = await this.applicationModel
@@ -498,10 +492,10 @@ export class VolunteersService {
       .exec();
     const user = userDoc
       ? {
-        role: userDoc.role,
-        careProviderType: userDoc.careProviderType,
-        specialty: userDoc.specialty,
-      }
+          role: userDoc.role,
+          careProviderType: userDoc.careProviderType,
+          specialty: userDoc.specialty,
+        }
       : null;
     return this.toResponse(
       app.toObject() as unknown as Record<string, unknown>,
@@ -535,10 +529,10 @@ export class VolunteersService {
       .exec();
     const user = userDoc
       ? {
-        role: userDoc.role,
-        careProviderType: userDoc.careProviderType,
-        specialty: userDoc.specialty,
-      }
+          role: userDoc.role,
+          careProviderType: userDoc.careProviderType,
+          specialty: userDoc.specialty,
+        }
       : null;
 
     return this.toResponse(
@@ -590,14 +584,14 @@ export class VolunteersService {
       const publicId = `vol_${userId}_${type}_${Date.now()}`;
       url = isPdf
         ? await this.cloudinary.uploadRawBuffer(file.buffer, {
-          folder,
-          publicId,
-          resourceType: 'raw',
-        })
+            folder,
+            publicId,
+            resourceType: 'raw',
+          })
         : await this.cloudinary.uploadBuffer(file.buffer, {
-          folder,
-          publicId,
-        });
+            folder,
+            publicId,
+          });
     } else {
       const path = await import('path');
       const fs = await import('fs/promises');
@@ -1065,12 +1059,6 @@ export class VolunteersService {
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const { width, height } = page.getSize();
-    const signatureBytes = await this._readCertificateAsset(
-      DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH,
-    );
-    const supervisorSignature = signatureBytes
-      ? await pdfDoc.embedPng(signatureBytes)
-      : null;
 
     const fullName = this._safeCertificateText(input.fullName, 80);
     const organization = this._safeCertificateText(
@@ -1173,14 +1161,6 @@ export class VolunteersService {
         font: fontRegular,
         color: textColor,
       });
-      if (supervisorSignature) {
-        page.drawImage(supervisorSignature, {
-          x: width * 0.135,
-          y: height * 0.112,
-          width: width * 0.09,
-          height: height * 0.055,
-        });
-      }
       page.drawText(authority, {
         x: width * 0.68,
         y: height * 0.182,
@@ -1249,21 +1229,6 @@ export class VolunteersService {
         font: fontRegular,
         color: footerColor,
       });
-      if (supervisorSignature) {
-        page.drawImage(supervisorSignature, {
-          x: 48,
-          y: 82,
-          width: 70,
-          height: 42,
-        });
-        page.drawText('Program Supervisor', {
-          x: 48,
-          y: 72,
-          size: 9,
-          font: fontRegular,
-          color: footerColor,
-        });
-      }
     }
 
     const bytes = await pdfDoc.save();
@@ -1304,8 +1269,6 @@ export class VolunteersService {
         : 'N/A';
 
     const rawTemplate = await fs.readFile(htmlTemplatePath, 'utf8');
-    const supervisorSignatureDataUri =
-      await this._getSupervisorSignatureDataUri();
     const html = this._renderCertificateHtml(rawTemplate, {
       fullName,
       organization,
@@ -1314,7 +1277,6 @@ export class VolunteersService {
       issueDate,
       certificateId: input.certificateId,
       quizScore: quizScoreText,
-      supervisorSignatureDataUri,
     });
 
     let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
@@ -1361,7 +1323,6 @@ export class VolunteersService {
       issueDate: string;
       certificateId: string;
       quizScore: string;
-      supervisorSignatureDataUri: string;
     },
   ): string {
     const tokens: Record<string, string> = {
@@ -1372,7 +1333,6 @@ export class VolunteersService {
       '{{ISSUE_DATE}}': this._escapeHtml(vars.issueDate),
       '{{CERTIFICATE_ID}}': this._escapeHtml(vars.certificateId),
       '{{QUIZ_SCORE}}': this._escapeHtml(vars.quizScore),
-      '{{SUPERVISOR_SIGNATURE_DATA_URI}}': vars.supervisorSignatureDataUri,
     };
 
     let rendered = template;
@@ -1389,24 +1349,6 @@ export class VolunteersService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
-  }
-
-  private async _getSupervisorSignatureDataUri(): Promise<string> {
-    const signature = await this._readCertificateAsset(
-      DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH,
-    );
-    if (!signature) return '';
-    return `data:image/png;base64,${signature.toString('base64')}`;
-  }
-
-  private async _readCertificateAsset(
-    assetPath: string,
-  ): Promise<Buffer | null> {
-    try {
-      return await fs.readFile(assetPath);
-    } catch {
-      return null;
-    }
   }
 
   private _drawCenteredText(
@@ -1524,7 +1466,7 @@ export class VolunteersService {
     const authorityName =
       this._safeCertificateText(
         process.env.CAREGIVER_CERTIFICATE_AUTHORITY_NAME?.trim() ||
-        'CogniCare Certification Authority',
+          'CogniCare Certification Authority',
         70,
       ) || 'CogniCare Certification Authority';
 
@@ -1556,8 +1498,8 @@ export class VolunteersService {
 
     const scorePercentRaw =
       latestPassedAttempt &&
-        typeof (latestPassedAttempt as { scorePercent?: unknown })
-          .scorePercent === 'number'
+      typeof (latestPassedAttempt as { scorePercent?: unknown })
+        .scorePercent === 'number'
         ? (latestPassedAttempt as { scorePercent: number }).scorePercent
         : undefined;
 
@@ -1592,8 +1534,8 @@ export class VolunteersService {
     const documents = (app.documents ?? []) as unknown[];
     const competencies = Array.isArray(app.competencies)
       ? (app.competencies as unknown[])
-        .map((value) => value?.toString().trim())
-        .filter((value): value is string => Boolean(value))
+          .map((value) => value?.toString().trim())
+          .filter((value): value is string => Boolean(value))
       : [];
     const status = app.status as string | undefined;
     const hasDocuments = documents.length >= 1;
@@ -1714,14 +1656,14 @@ export class VolunteersService {
     const isCaregiver = isCaregiverProfile(
       userDoc
         ? {
-          role: userDoc.role,
-          careProviderType: userDoc.careProviderType,
-        }
+            role: userDoc.role,
+            careProviderType: userDoc.careProviderType,
+          }
         : null,
       applicationDoc
         ? {
-          careProviderType: applicationDoc.careProviderType,
-        }
+            careProviderType: applicationDoc.careProviderType,
+          }
         : null,
     );
     if (!isCaregiver) {
@@ -1834,8 +1776,8 @@ export class VolunteersService {
 
     const manualCompetencies = Array.isArray(args.application?.['competencies'])
       ? (args.application?.['competencies'] as unknown[])
-        .map((value) => value?.toString().trim())
-        .filter((value): value is string => Boolean(value))
+          .map((value) => value?.toString().trim())
+          .filter((value): value is string => Boolean(value))
       : [];
     for (const competency of manualCompetencies) {
       pushUnique({
@@ -2039,7 +1981,7 @@ export class VolunteersService {
         return milestone.max == null
           ? args.stats.totalPoints >= milestone.min
           : args.stats.totalPoints >= milestone.min &&
-          args.stats.totalPoints <= milestone.max;
+              args.stats.totalPoints <= milestone.max;
       }) ?? milestones[0];
     const next =
       milestones.find((milestone) => milestone.min > current.min) ?? null;
@@ -2047,16 +1989,16 @@ export class VolunteersService {
       current.max == null
         ? 100
         : Math.round(
-          Math.max(
-            0,
-            Math.min(
-              100,
-              ((args.stats.totalPoints - current.min) /
-                (current.max - current.min + 1)) *
-              100,
+            Math.max(
+              0,
+              Math.min(
+                100,
+                ((args.stats.totalPoints - current.min) /
+                  (current.max - current.min + 1)) *
+                  100,
+              ),
             ),
-          ),
-        );
+          );
     const summaryParts: string[] = [];
     if (args.stats.missionsCompleted > 0) {
       summaryParts.push(

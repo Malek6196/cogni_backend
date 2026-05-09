@@ -75,6 +75,13 @@ export class GenerateDailyScheduleDto {
   conversationHistory?: string;
 
   @ApiPropertyOptional({
+    description: 'Langue préférée pour la réponse (fr, en, ar)',
+  })
+  @IsOptional()
+  @IsString()
+  locale?: string;
+
+  @ApiPropertyOptional({
     description: 'Créer une notification in-app avec le résumé',
   })
   @IsOptional()

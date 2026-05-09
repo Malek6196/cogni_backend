@@ -107,7 +107,7 @@ export class ChildrenService {
       .find({ parentId: new Types.ObjectId(familyId) })
       .sort({ createdAt: -1 })
       .lean()
-      .exec()) as ChildLean[];
+      .exec()) as unknown as ChildLean[];
     return children.map((c) => ({
       id: c._id?.toString() ?? '',
       fullName: c.fullName ?? '',
@@ -166,13 +166,13 @@ export class ChildrenService {
         .exec();
       if (org) {
         org.childrenIds = org.childrenIds || [];
-        org.childrenIds.push(child._id);
+        org.childrenIds.push(child._id as unknown as Types.ObjectId);
         await org.save();
       }
     }
 
     return {
-      id: child._id.toString(),
+      id: (child._id as unknown as Types.ObjectId).toString(),
       fullName: child.fullName,
       dateOfBirth: child.dateOfBirth,
       gender: child.gender,
@@ -192,7 +192,7 @@ export class ChildrenService {
       .find({ specialistId: new Types.ObjectId(specialistId) })
       .sort({ createdAt: -1 })
       .lean()
-      .exec()) as ChildLean[];
+      .exec()) as unknown as ChildLean[];
 
     return children.map((c) => ({
       _id: c._id?.toString() ?? '',
@@ -223,7 +223,7 @@ export class ChildrenService {
     });
 
     return {
-      _id: child._id.toString(),
+      _id: (child._id as unknown as Types.ObjectId).toString(),
       fullName: child.fullName,
       dateOfBirth: child.dateOfBirth,
       gender: child.gender,
@@ -294,7 +294,7 @@ export class ChildrenService {
         })
         .select('_id fullName parentId')
         .lean()
-        .exec()) as ChildLean[];
+        .exec()) as unknown as ChildLean[];
 
       const childrenByParentId = new Map<string, ChildLean[]>();
       for (const child of legacyChildren) {
@@ -342,7 +342,7 @@ export class ChildrenService {
       })
       .select('fullName dateOfBirth parentId')
       .lean()
-      .exec()) as ChildLean[];
+      .exec()) as unknown as ChildLean[];
 
     const parentIds = Array.from(
       new Set(
