@@ -20,6 +20,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { buildImageUploadOptions } from '../common/upload/multer-upload-options';
 import { ChildrenService } from './children.service';
 import { AddChildDto } from './dto/add-child.dto';
+import { UpdateChildDto } from './dto/update-child.dto';
 import { CreateFamilyDto } from '../organization/dto/create-family.dto';
 
 @ApiTags('children')
@@ -136,6 +137,22 @@ export class ChildrenController {
     return this.childrenService.createPrivateFamily(
       req.user.id as string,
       body,
+    );
+  }
+
+  @Patch(':id')
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Update child data' })
+  async updateChild(
+    @Request() req: any,
+    @Param('id') childId: string,
+    @Body() dto: UpdateChildDto,
+  ) {
+    return this.childrenService.updateChild(
+      childId,
+      req.user.id as string,
+      dto,
     );
   }
 

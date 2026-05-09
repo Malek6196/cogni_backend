@@ -19,6 +19,7 @@ import {
 import { OrganizationService } from '../organization/organization.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { AddChildDto } from './dto/add-child.dto';
+import { UpdateChildDto } from './dto/update-child.dto';
 import { CreateFamilyDto } from '../organization/dto/create-family.dto';
 
 interface UserLean {
@@ -399,6 +400,56 @@ export class ChildrenService {
     ) {
       throw new ForbiddenException('Not authorized');
     }
+  }
+
+  /**
+   * Update child data. Only parent or org leader can update.
+   */
+  async updateChild(
+    childId: string,
+    requesterId: string,
+    dto: UpdateChildDto,
+  ) {
+    const child = await this.childModel.findById(childId).exec();
+    if (!child) throw new NotFoundException('Child not found');
+
+    const isParent = child.parentId?.toString() === requesterId;
+    let isOrgLeader = false;
+    if (!isParent && child.organizationId) {
+      const org = await this.organizationModel
+        .findById(child.organizationId)
+        .select('leader')
+        .lean()
+        .exec() as unknown as { leader?: Types.ObjectId } | null;
+      isOrgLeader = org?.leader?.toString() === requesterId;
+    }
+    if (!isParent && !isOrgLeader) {
+      throw new ForbiddenException('Not authorized to update this child');
+    }
+
+    if (dto.fullName !== undefined) child.fullName = dto.fullName;
+    if (dto.dateOfBirth !== undefined) child.dateOfBirth = new Date(dto.dateOfBirth);
+    if (dto.gender !== undefined) child.gender = dto.gender;
+    if (dto.diagnosis !== undefined) child.diagnosis = dto.diagnosis;
+    if (dto.medicalHistory !== undefined) child.medicalHistory = dto.medicalHistory;
+    if (dto.allergies !== undefined) child.allergies = dto.allergies;
+    if (dto.medications !== undefined) child.medications = dto.medications;
+    if (dto.notes !== undefined) child.notes = dto.notes;
+
+    await child.save();
+
+    return {
+      id: (child._id as { toString(): string }).toString(),
+      fullName: child.fullName,
+      dateOfBirth: child.dateOfBirth,
+      gender: child.gender,
+      diagnosis: child.diagnosis,
+      medicalHistory: child.medicalHistory,
+      allergies: child.allergies,
+      medications: child.medications,
+      notes: child.notes,
+      profilePicture: child.profilePicture,
+    };
   }
 
   /**
