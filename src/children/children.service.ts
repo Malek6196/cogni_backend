@@ -42,6 +42,7 @@ interface ChildLean {
   allergies?: string;
   medications?: string;
   notes?: string;
+  profilePicture?: string;
   parentId?: Types.ObjectId;
 }
 
@@ -119,6 +120,7 @@ export class ChildrenService {
       allergies: c.allergies,
       medications: c.medications,
       notes: c.notes,
+      profilePicture: c.profilePicture,
       parentId: c.parentId?.toString(),
     }));
   }
