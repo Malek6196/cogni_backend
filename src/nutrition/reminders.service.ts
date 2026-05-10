@@ -37,6 +37,7 @@ export class RemindersService {
    * Create a task reminder for a child
    */
   async create(dto: CreateTaskReminderDto, userId: string) {
+    this.logger.log(`[RemindersService.create] childId=${dto.childId} userId=${userId} title="${dto.title}"`);
     await this.childAccessService.assertCanAccessChild(dto.childId, userId);
 
     // Create reminder
@@ -49,7 +50,9 @@ export class RemindersService {
         : undefined,
     });
 
+    this.logger.log(`[RemindersService.create] saving reminder...`);
     await reminder.save();
+    this.logger.log(`[RemindersService.create] saved _id=${reminder._id}`);
 
     return this.formatReminder(reminder);
   }
@@ -166,7 +169,7 @@ export class RemindersService {
         return true;
       });
 
-    this.logger.debug(
+    this.logger.log(
       `getTodayReminders childId=${childId} today=${todayStr} raw=${reminders.length} filtered=${result.length}`,
     );
     return result;

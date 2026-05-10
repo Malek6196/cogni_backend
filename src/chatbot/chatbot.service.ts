@@ -1913,25 +1913,34 @@ ${this.outputLanguageRule(locale)}`;
     action: PendingActionTokenPayload['action'],
     locale: AssistantLocale = 'fr',
   ): Promise<ChatbotConfirmResponse> {
+    this.logger.log(
+      `[confirmCreateTaskReminder] userId=${userId} childId=${action.childId} title="${action.title}" time=${action.time}`,
+    );
+
     const access = await this.childAccessService.assertCanAccessChild(
       action.childId,
       userId,
     );
 
-    const reminder = await this.remindersService.create(
-      {
-        childId: action.childId,
-        type: ReminderType.CUSTOM,
-        title: action.title,
-        description: action.description,
-        frequency: ReminderFrequency.ONCE,
-        times: [action.time],
-        icon: '📅',
-        color: '#A7DBE6',
-        soundEnabled: true,
-        vibrationEnabled: true,
-      } satisfies CreateTaskReminderDto,
-      userId,
+    const createDto = {
+      childId: action.childId,
+      type: ReminderType.CUSTOM,
+      title: action.title,
+      description: action.description,
+      frequency: ReminderFrequency.ONCE,
+      times: [action.time],
+      icon: '📅',
+      color: '#A7DBE6',
+      soundEnabled: true,
+      vibrationEnabled: true,
+    } satisfies CreateTaskReminderDto;
+
+    this.logger.log(`[confirmCreateTaskReminder] calling remindersService.create with dto=${JSON.stringify(createDto)}`);
+
+    const reminder = await this.remindersService.create(createDto, userId);
+
+    this.logger.log(
+      `[confirmCreateTaskReminder] reminder created result=${JSON.stringify(reminder)}`,
     );
 
     const childName =
