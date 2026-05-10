@@ -8,7 +8,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { createRequire } from 'module';
 import puppeteer from 'puppeteer';
 import {
   PDFFont,
@@ -80,20 +79,6 @@ const DEFAULT_CERT_TEMPLATE_JPG_PATH = path.join(
   'certificates',
   'caregiver-certificate-template.jpg',
 );
-const nodeRequire = createRequire(__filename);
-
-type QrCodeModule = {
-  toDataURL: (
-    text: string,
-    options: {
-      errorCorrectionLevel: string;
-      type: string;
-      width: number;
-      margin: number;
-      color: { dark: string; light: string };
-    },
-  ) => Promise<string>;
-};
 const DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH = path.join(
   process.cwd(),
   'assets',
@@ -1518,11 +1503,6 @@ export class VolunteersService {
     const rawTemplate = await fs.readFile(htmlTemplatePath, 'utf8');
     const supervisorSignatureDataUri =
       await this._getSupervisorSignatureDataUri();
-    const logoDataUri = await this._getLogoDataUri();
-    const qrCodeDataUri = await this._generateQrCodeDataUri(
-      input.certificateId,
-    );
-
     const html = this._renderCertificateHtml(rawTemplate, {
       fullName,
       organization,
@@ -1532,8 +1512,6 @@ export class VolunteersService {
       certificateId: input.certificateId,
       quizScore: quizScoreText,
       supervisorSignatureDataUri,
-      logoDataUri,
-      qrCodeDataUri,
     });
 
     let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
@@ -1581,8 +1559,6 @@ export class VolunteersService {
       certificateId: string;
       quizScore: string;
       supervisorSignatureDataUri: string;
-      logoDataUri: string;
-      qrCodeDataUri: string;
     },
   ): string {
     const tokens: Record<string, string> = {
@@ -1594,8 +1570,6 @@ export class VolunteersService {
       '{{CERTIFICATE_ID}}': this._escapeHtml(vars.certificateId),
       '{{QUIZ_SCORE}}': this._escapeHtml(vars.quizScore),
       '{{SUPERVISOR_SIGNATURE_DATA_URI}}': vars.supervisorSignatureDataUri,
-      '{{LOGO_DATA_URI}}': vars.logoDataUri,
-      '{{QR_CODE_DATA_URI}}': vars.qrCodeDataUri,
     };
 
     let rendered = template;
@@ -1620,42 +1594,6 @@ export class VolunteersService {
     );
     if (!signature) return '';
     return `data:image/png;base64,${signature.toString('base64')}`;
-  }
-
-  private async _getLogoDataUri(): Promise<string> {
-    const logoPath = path.join(
-      process.cwd(),
-      'assets',
-      'certificates',
-      'app_logo.png',
-    );
-    try {
-      const logoBuffer = await fs.readFile(logoPath);
-      return `data:image/png;base64,${logoBuffer.toString('base64')}`;
-    } catch (error) {
-      this.logger.warn(`Failed to read logo file: ${error}`);
-      return '';
-    }
-  }
-
-  private async _generateQrCodeDataUri(certificateId: string): Promise<string> {
-    try {
-      const qrCode = nodeRequire('qrcode') as unknown as QrCodeModule;
-      const qrCodeDataUrl = await qrCode.toDataURL(certificateId, {
-        errorCorrectionLevel: 'M',
-        type: 'image/png',
-        width: 256,
-        margin: 1,
-        color: {
-          dark: '#000000',
-          light: '#FFFFFF',
-        },
-      });
-      return qrCodeDataUrl;
-    } catch (error) {
-      this.logger.warn(`Failed to generate QR code: ${error}`);
-      return '';
-    }
   }
 
   private async _readCertificateAsset(
@@ -1877,14 +1815,7 @@ export class VolunteersService {
     const hasDocuments = documents.length >= 1;
     const approvedWithType =
       status === 'approved' && userHasCareProviderType(user ?? null);
-    const hasCertification =
-      app.trainingCertified === true ||
-      Boolean(app.trainingCertifiedAt) ||
-      Boolean(app.certificationCertificateId) ||
-      Boolean(app.certificationCertificateUrl) ||
-      Boolean(app.certificationIssuedAt);
-    const profileComplete =
-      hasDocuments || approvedWithType || hasCertification;
+    const profileComplete = hasDocuments || approvedWithType;
     const careProviderType = effectiveCareProviderType(
       app.careProviderType as string | undefined,
       user ?? null,

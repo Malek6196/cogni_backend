@@ -198,12 +198,8 @@ export class CertificationTestService {
   async getVolunteerInsights(userId: string): Promise<{
     summary: string;
     recommendations: string[];
-    scorePercent?: number;
-    completedCoursesCount?: number;
-    isCertified?: boolean;
-    lastTestPassed?: boolean;
   }> {
-    const [app, enrollments, lastAttempt, allAttempts] = await Promise.all([
+    const [app, enrollments, lastAttempt] = await Promise.all([
       this.volunteersService.getOrCreateApplication(userId),
       this.coursesService.myEnrollments(userId),
       this.attemptModel
@@ -211,95 +207,43 @@ export class CertificationTestService {
         .sort({ createdAt: -1 })
         .lean()
         .exec(),
-      this.attemptModel
-        .find({ userId: new Types.ObjectId(userId) })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .lean()
-        .exec(),
     ]);
-
     const application = app;
-    const isCertified = application?.trainingCertified === true;
-    const allEnrollments = enrollments as Array<Record<string, unknown>>;
-
-    const completedEnrollments = allEnrollments.filter(
+    const completedEnrollments = (
+      enrollments as Array<Record<string, unknown>>
+    ).filter(
       (e) => e.status === 'completed' && (e.progressPercent as number) >= 100,
-    );
-    const inProgressEnrollments = allEnrollments.filter(
-      (e) => e.status !== 'completed' && (e.progressPercent as number) > 0,
     );
     const qualificationCompleted = completedEnrollments.some(
       (e) =>
         (e.course as Record<string, unknown>)?.isQualificationCourse === true,
     );
-
     const lastAttemptData = lastAttempt as Record<string, unknown> | null;
-    const attemptsData = allAttempts as Array<Record<string, unknown>>;
-    const attemptCount = attemptsData.length;
-    const bestScore = attemptsData.reduce((best, a) => {
-      const s = (a.scorePercent as number) ?? 0;
-      return s > best ? s : best;
-    }, 0);
-    const lastScore = (lastAttemptData?.scorePercent as number) ?? null;
-    const lastPassed = lastAttemptData?.passed === true;
-
-    // Compute overall progress percent across all enrollments
-    const avgProgress =
-      allEnrollments.length > 0
-        ? Math.round(
-            allEnrollments.reduce(
-              (sum, e) => sum + ((e.progressPercent as number) ?? 0),
-              0,
-            ) / allEnrollments.length,
-          )
-        : 0;
-
     const context = {
       applicationStatus: application?.status,
-      isCertified,
+      trainingCertified: application?.trainingCertified,
       completedCoursesCount: completedEnrollments.length,
-      inProgressCoursesCount: inProgressEnrollments.length,
-      totalEnrolledCourses: allEnrollments.length,
       qualificationCourseCompleted: qualificationCompleted,
-      averageProgressPercent: avgProgress,
-      certificationAttempts: attemptCount,
-      lastTestScore: lastScore,
-      bestTestScore: bestScore > 0 ? bestScore : null,
-      lastTestPassed: lastPassed,
+      lastTestScore: lastAttemptData?.scorePercent,
+      lastTestPassed: lastAttemptData?.passed,
     };
-
-    // --- Smart fallback (no Gemini key) ---
     if (!this.geminiKey) {
       return {
-        ...this._buildSmartFallback(context),
-        scorePercent: lastScore ?? undefined,
-        completedCoursesCount: completedEnrollments.length,
-        isCertified,
-        lastTestPassed: lastPassed,
+        summary:
+          "Résumé personnalisé non disponible (configuration API manquante). Continuez vos formations et passez le test de certification pour débloquer l'Agenda et les Messages.",
+        recommendations: [
+          qualificationCompleted
+            ? "Passez le test de certification pour débloquer l'Agenda et les Messages."
+            : 'Complétez une formation qualifiante à 100 %.',
+          "Consultez le catalogue pour découvrir d'autres formations.",
+        ],
       };
     }
-
-    // --- Gemini AI ---
-    const prompt = `Tu es un coach bienveillant pour une plateforme de bénévoles accompagnant des enfants autistes (TSA).
-Voici le profil anonymisé d'un bénévole (JSON):
-${JSON.stringify(context, null, 2)}
-
-Génère une analyse personnalisée. Réponds UNIQUEMENT en JSON valide (pas de markdown, pas de \`\`\`):
-{
-  "summary": "2-3 phrases encourageantes et précises sur son parcours actuel, ses forces et son prochain objectif clé",
-  "recommendations": ["action concrète 1", "action concrète 2", "action concrète 3"],
-  "strengths": ["point fort 1", "point fort 2"],
-  "nextMilestone": "description courte du prochain jalon important"
-}
-
-Règles:
-- Sois précis et utilise les données (scores, nombre de cours, progression)
-- Recommandations actionnables et motivantes
-- Langue: français
-- Si certifié: félicite et oriente vers les missions et formations avancées
-- Si score test < 80%: encourage à réviser les points faibles
-- Si aucune formation commencée: guide vers le premier pas`;
+    const prompt = `Tu es un assistant bienveillant pour une plateforme de bénévoles accompagnant des enfants (dont TSA). Voici les données anonymisées d'un bénévole (JSON):
+${JSON.stringify(context)}
+Réponds UNIQUEMENT en JSON valide avec exactement ces clés (pas de markdown, pas de \`\`\`):
+- "summary": une phrase courte et encourageante sur son profil (formation, certification).
+- "recommendations": un tableau de 2 à 4 recommandations courtes et actionnables (ex: "Passer le test de certification", "Explorer les formations avancées"). En français.`;
 
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent`;
@@ -309,7 +253,10 @@ Règles:
         url,
         {
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 1024 },
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 1024,
+          },
         },
         {
           params: { key: this.geminiKey },
@@ -317,147 +264,36 @@ Règles:
           headers: { 'Content-Type': 'application/json' },
         },
       );
-
       const text =
         res.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
       const cleaned = text
         .replace(/```json\s*/gi, '')
         .replace(/```\s*/g, '')
         .trim();
-      const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-
+      const parsed = JSON.parse(cleaned);
       const summary =
         typeof parsed.summary === 'string'
           ? parsed.summary
-          : this._buildSmartFallback(context).summary;
-
+          : 'Profil en cours de construction.';
       const recommendations = Array.isArray(parsed.recommendations)
-        ? (parsed.recommendations as unknown[])
-            .filter((r): r is string => typeof r === 'string')
-            .slice(0, 4)
-        : this._buildSmartFallback(context).recommendations;
-
-      const strengths = Array.isArray(parsed.strengths)
-        ? (parsed.strengths as unknown[])
-            .filter((s): s is string => typeof s === 'string')
-            .slice(0, 3)
+        ? (parsed.recommendations as unknown[]).filter(
+            (r: unknown) => typeof r === 'string',
+          )
         : [];
-
-      const nextMilestone =
-        typeof parsed.nextMilestone === 'string' ? parsed.nextMilestone : null;
-
-      return {
-        summary,
-        recommendations,
-        ...(strengths.length > 0 && { strengths }),
-        ...(nextMilestone && { nextMilestone }),
-        scorePercent: lastScore ?? undefined,
-        completedCoursesCount: completedEnrollments.length,
-        isCertified,
-        lastTestPassed: lastPassed,
-      };
+      return { summary, recommendations };
     } catch (err) {
       this.logger.warn(
         'Gemini volunteer insights failed: ' + (err as Error)?.message,
       );
       return {
-        ...this._buildSmartFallback(context),
-        scorePercent: lastScore ?? undefined,
-        completedCoursesCount: completedEnrollments.length,
-        isCertified,
-        lastTestPassed: lastPassed,
-      };
-    }
-  }
-
-  private _buildSmartFallback(context: {
-    isCertified: boolean;
-    qualificationCourseCompleted: boolean;
-    completedCoursesCount: number;
-    inProgressCoursesCount: number;
-    totalEnrolledCourses: number;
-    averageProgressPercent: number;
-    certificationAttempts: number;
-    lastTestScore: number | null;
-    bestTestScore: number | null;
-    lastTestPassed: boolean;
-  }): { summary: string; recommendations: string[] } {
-    const {
-      isCertified,
-      qualificationCourseCompleted,
-      completedCoursesCount,
-      inProgressCoursesCount,
-      totalEnrolledCourses,
-      averageProgressPercent,
-      certificationAttempts,
-      lastTestScore,
-      bestTestScore,
-      lastTestPassed,
-    } = context;
-
-    if (isCertified) {
-      return {
-        summary: `Félicitations ! Vous êtes certifié avec ${completedCoursesCount} formation${completedCoursesCount > 1 ? 's' : ''} complétée${completedCoursesCount > 1 ? 's' : ''}. Vous êtes prêt à accompagner des familles et à accepter des missions.`,
+        summary:
+          'Profil en cours. Complétez vos formations et le test de certification pour des conseils personnalisés.',
         recommendations: [
-          "Consultez l'Agenda pour accepter vos premières missions",
-          'Explorez les formations avancées pour approfondir vos compétences',
-          'Partagez votre expérience dans la section Communauté',
-          'Téléchargez votre certificat et partagez votre réussite',
+          qualificationCompleted
+            ? 'Passez le test de certification.'
+            : 'Complétez une formation qualifiante.',
         ],
       };
     }
-
-    if (qualificationCourseCompleted) {
-      const scoreHint =
-        certificationAttempts > 0 && lastTestScore !== null
-          ? ` Votre dernier score : ${lastTestScore}%.${lastTestScore < 80 ? ' Révisez les points faibles avant de réessayer.' : ' Vous êtes proche !'}`
-          : '';
-      return {
-        summary: `Excellent travail ! Vous avez terminé la formation qualifiante.${scoreHint} Passez le test de certification pour débloquer l'Agenda et les Messages.`,
-        recommendations: [
-          certificationAttempts > 0
-            ? `Réessayez le test (meilleur score : ${bestTestScore ?? 0}%)`
-            : 'Passez le test de certification',
-          'Révisez les modules clés : méthode TEACCH, communication PECS',
-          'Lisez les ressources supplémentaires dans le catalogue',
-        ],
-      };
-    }
-
-    if (inProgressCoursesCount > 0) {
-      return {
-        summary: `Vous progressez bien ! ${completedCoursesCount} formation${completedCoursesCount > 1 ? 's' : ''} terminée${completedCoursesCount > 1 ? 's' : ''}, ${inProgressCoursesCount} en cours (progression moyenne : ${averageProgressPercent}%). Continuez pour atteindre la certification.`,
-        recommendations: [
-          'Terminez la formation qualifiante pour accéder au test',
-          'Consacrez 15-20 minutes par jour à votre formation',
-          'Prenez des notes sur les concepts clés (TEACCH, PECS)',
-          completedCoursesCount > 0
-            ? `Bravo pour vos ${completedCoursesCount} formation${completedCoursesCount > 1 ? 's' : ''} complétée${completedCoursesCount > 1 ? 's' : ''} !`
-            : 'Explorez le catalogue pour trouver la formation qui vous convient',
-        ],
-      };
-    }
-
-    if (totalEnrolledCourses > 0) {
-      return {
-        summary: `Vous avez commencé votre parcours avec ${totalEnrolledCourses} formation${totalEnrolledCourses > 1 ? 's' : ''} inscrite${totalEnrolledCourses > 1 ? 's' : ''}. Reprenez là où vous vous êtes arrêté pour progresser vers la certification.`,
-        recommendations: [
-          'Reprenez votre formation en cours',
-          "Fixez-vous un objectif : terminer un module aujourd'hui",
-          'Rejoignez la communauté pour échanger avec d\'autres bénévoles',
-        ],
-      };
-    }
-
-    return {
-      summary:
-        "Bienvenue ! Commencez votre parcours de formation pour devenir un accompagnant certifié et soutenir des familles d'enfants autistes.",
-      recommendations: [
-        'Commencez par la formation "Méthode TEACCH" (formation qualifiante)',
-        'Explorez le catalogue de formations disponibles',
-        "Rejoignez la communauté pour échanger avec d'autres bénévoles",
-        'Complétez votre profil pour personnaliser votre expérience',
-      ],
-    };
   }
 }

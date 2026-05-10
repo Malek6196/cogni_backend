@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Course } from './schemas/course.schema';
@@ -11,116 +7,12 @@ import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class CoursesService {
-  private static readonly defaultCourseDurationDays = 28;
-  private static readonly millisecondsPerDay = 24 * 60 * 60 * 1000;
-
   constructor(
     @InjectModel(Course.name) private readonly courseModel: Model<Course>,
     @InjectModel(CourseEnrollment.name)
     private readonly enrollmentModel: Model<CourseEnrollment>,
     private readonly notifications: NotificationsService,
   ) {}
-
-  private toOptionalDate(value: unknown): Date | undefined {
-    if (value instanceof Date) return value;
-    if (typeof value === 'string' || typeof value === 'number') {
-      const parsed = new Date(value);
-      return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-    }
-    return undefined;
-  }
-
-  private idToString(value: unknown): string | undefined {
-    if (value instanceof Types.ObjectId) return value.toString();
-    if (typeof value === 'string') return value;
-    if (value && typeof value === 'object' && '_id' in value) {
-      return this.idToString((value as { _id?: unknown })._id);
-    }
-    return undefined;
-  }
-
-  private calculateEnrollmentTimeline(
-    enrollment: Record<string, unknown>,
-    course?: Record<string, unknown> | null,
-  ) {
-    const createdAt = this.toOptionalDate(enrollment.createdAt) ?? new Date();
-    const courseStart = this.toOptionalDate(course?.startDate);
-    const courseEnd = this.toOptionalDate(course?.endDate);
-    const startedAt = courseStart ?? createdAt;
-    const fallbackEndsAt = new Date(
-      startedAt.getTime() +
-        CoursesService.defaultCourseDurationDays *
-          CoursesService.millisecondsPerDay,
-    );
-    const endsAt =
-      courseEnd && courseEnd.getTime() > startedAt.getTime()
-        ? courseEnd
-        : fallbackEndsAt;
-    const durationDays = Math.max(
-      1,
-      Math.ceil(
-        (endsAt.getTime() - startedAt.getTime()) /
-          CoursesService.millisecondsPerDay,
-      ),
-    );
-    const now = new Date();
-    const hasStarted = now.getTime() >= startedAt.getTime();
-    const elapsedDays = Math.max(
-      0,
-      Math.floor(
-        (now.getTime() - startedAt.getTime()) /
-          CoursesService.millisecondsPerDay,
-      ),
-    );
-    const timelineProgress = hasStarted
-      ? Math.min(
-          100,
-          Math.max(0, Math.floor((elapsedDays / durationDays) * 100)),
-        )
-      : 0;
-    const storedProgress =
-      typeof enrollment.progressPercent === 'number'
-        ? enrollment.progressPercent
-        : 0;
-    const progressPercent = Math.min(
-      100,
-      Math.max(storedProgress, timelineProgress),
-    );
-    const status =
-      progressPercent >= 100
-        ? 'completed'
-        : hasStarted
-          ? 'in_progress'
-          : 'enrolled';
-    const completedAt =
-      this.toOptionalDate(enrollment.completedAt) ??
-      (status === 'completed' ? endsAt : undefined);
-    const daysUntilStart = Math.max(
-      0,
-      Math.ceil(
-        (startedAt.getTime() - now.getTime()) /
-          CoursesService.millisecondsPerDay,
-      ),
-    );
-    const canCancel =
-      status === 'enrolled' &&
-      progressPercent === 0 &&
-      startedAt.getTime() > now.getTime();
-
-    return {
-      startedAt,
-      endsAt,
-      durationDays,
-      daysUntilStart,
-      daysElapsed: Math.min(elapsedDays, durationDays),
-      remainingDays: Math.max(durationDays - elapsedDays, 0),
-      progressPercent,
-      status,
-      completedAt,
-      progressSource: 'timeline',
-      canCancel,
-    };
-  }
 
   async create(dto: {
     title: string;
@@ -179,7 +71,6 @@ export class CoursesService {
         certification: r.certification,
         targetAudience: r.targetAudience,
         prerequisites: r.prerequisites,
-        durationDays: CoursesService.defaultCourseDurationDays,
       };
     });
   }
@@ -218,26 +109,17 @@ export class CoursesService {
     return list.map((e) => {
       const o = e as Record<string, unknown>;
       const course = o.courseId as Record<string, unknown> | null;
-      const timeline = this.calculateEnrollmentTimeline(o, course);
       const courseId =
-        this.idToString(course?._id) ?? this.idToString(o.courseId);
+        course?._id?.toString?.() ??
+        (o.courseId as { toString?: () => string } | undefined)?.toString?.();
       return {
-        id: this.idToString(o._id),
+        id: (o._id as { toString(): string })?.toString?.(),
         courseId,
-        status: timeline.status,
-        progressPercent: timeline.progressPercent,
-        completedAt: timeline.completedAt,
-        startedAt: timeline.startedAt,
-        endsAt: timeline.endsAt,
-        durationDays: timeline.durationDays,
-        daysUntilStart: timeline.daysUntilStart,
-        daysElapsed: timeline.daysElapsed,
-        remainingDays: timeline.remainingDays,
-        progressSource: timeline.progressSource,
-        canCancel: timeline.canCancel,
+        status: o.status,
+        progressPercent: o.progressPercent,
+        completedAt: o.completedAt,
         course: course
           ? {
-              id: courseId,
               title: course.title,
               description: course.description,
               slug: course.slug,
@@ -251,7 +133,6 @@ export class CoursesService {
               certification: course.certification,
               targetAudience: course.targetAudience,
               prerequisites: course.prerequisites,
-              durationDays: timeline.durationDays,
             }
           : null,
       };
@@ -269,7 +150,7 @@ export class CoursesService {
       .populate('userId', 'fullName email')
       .populate(
         'courseId',
-        'title slug isQualificationCourse startDate endDate courseType certification',
+        'title slug isQualificationCourse courseType certification',
       )
       .sort({ updatedAt: -1 })
       .lean()
@@ -277,37 +158,25 @@ export class CoursesService {
     return list.map((e) => {
       const o = e as Record<string, unknown>;
       const course = o.courseId as Record<string, unknown> | null;
-      const timeline = this.calculateEnrollmentTimeline(o, course);
       const user = o.userId as Record<string, unknown> | null;
       const courseId =
-        this.idToString(course?._id) ?? this.idToString(o.courseId);
+        course?._id?.toString?.() ??
+        (o.courseId as { toString?: () => string } | undefined)?.toString?.();
       return {
-        id: this.idToString(o._id),
-        userId: this.idToString(o.userId),
+        id: (o._id as { toString(): string })?.toString?.(),
+        userId: (o.userId as Types.ObjectId)?.toString?.(),
         courseId,
-        status: timeline.status,
-        progressPercent: timeline.progressPercent,
-        completedAt: timeline.completedAt,
-        startedAt: timeline.startedAt,
-        endsAt: timeline.endsAt,
-        durationDays: timeline.durationDays,
-        daysUntilStart: timeline.daysUntilStart,
-        daysElapsed: timeline.daysElapsed,
-        remainingDays: timeline.remainingDays,
-        progressSource: timeline.progressSource,
-        canCancel: timeline.canCancel,
+        status: o.status,
+        progressPercent: o.progressPercent,
+        completedAt: o.completedAt,
         user: user ? { fullName: user.fullName, email: user.email } : null,
         course: course
           ? {
-              id: courseId,
               title: course.title,
               slug: course.slug,
               isQualificationCourse: course.isQualificationCourse,
-              startDate: course.startDate,
-              endDate: course.endDate,
               courseType: course.courseType,
               certification: course.certification,
-              durationDays: timeline.durationDays,
             }
           : null,
       };
@@ -362,56 +231,24 @@ export class CoursesService {
     return this.myEnrollments(userId);
   }
 
-  async cancelEnrollment(userId: string, enrollmentId: string) {
-    const enrollment = await this.enrollmentModel
-      .findOne({
-        _id: enrollmentId,
-        userId: new Types.ObjectId(userId),
-      })
-      .populate('courseId', 'startDate endDate')
-      .lean()
-      .exec();
-    if (!enrollment) throw new NotFoundException('Enrollment not found');
-
-    const enrollmentRecord = enrollment as Record<string, unknown>;
-    const course = enrollmentRecord.courseId as Record<string, unknown> | null;
-    const timeline = this.calculateEnrollmentTimeline(enrollmentRecord, course);
-    if (!timeline.canCancel) {
-      throw new ForbiddenException(
-        'Enrollment can only be cancelled before the course starts',
-      );
-    }
-
-    await this.enrollmentModel
-      .deleteOne({
-        _id: enrollmentId,
-        userId: new Types.ObjectId(userId),
-      })
-      .exec();
-    return this.myEnrollments(userId);
-  }
-
   /**
    * Returns true if the user has at least one completed enrollment in a qualification course.
    */
   async hasCompletedQualificationCourse(userId: string): Promise<boolean> {
     const list = await this.enrollmentModel
-      .find({ userId: new Types.ObjectId(userId) })
+      .find({
+        userId: new Types.ObjectId(userId),
+        status: 'completed',
+        progressPercent: 100,
+      })
       .populate('courseId', 'isQualificationCourse')
       .lean()
       .exec();
     for (const e of list) {
-      const enrollment = e as Record<string, unknown>;
-      const course = enrollment.courseId as {
+      const course = (e as Record<string, unknown>).courseId as {
         isQualificationCourse?: boolean;
       } | null;
-      const timeline = this.calculateEnrollmentTimeline(
-        enrollment,
-        course as Record<string, unknown> | null,
-      );
-      if (course?.isQualificationCourse && timeline.progressPercent >= 100) {
-        return true;
-      }
+      if (course?.isQualificationCourse) return true;
     }
     return false;
   }
