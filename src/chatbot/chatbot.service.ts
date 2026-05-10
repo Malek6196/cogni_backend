@@ -329,6 +329,7 @@ export class ChatbotService {
       );
     }
 
+    this.logger.log(`[confirm] actionType=${payload.action.type} userId=${actor.id}`);
     switch (payload.action.type) {
       case 'create_task_reminder':
         return this.confirmCreateTaskReminder(
@@ -600,10 +601,12 @@ export class ChatbotService {
         ? responseMessage.tool_calls
         : [];
 
+      this.logger.log(`[chat] toolCalls detected count=${toolCalls.length}`);
       if (toolCalls.length > 0) {
         const toolCall = toolCalls[0] as {
           function?: { name?: string; arguments?: string };
         };
+        this.logger.log(`[chat] toolCall function=${toolCall.function?.name} args=${toolCall.function?.arguments}`);
         const currentChildId =
           context.uiContext && typeof context.uiContext === 'object'
             ? (context.uiContext as Record<string, unknown>).currentChildId
@@ -616,6 +619,7 @@ export class ChatbotService {
           locale,
           typeof currentChildId === 'string' ? currentChildId : undefined,
         );
+        this.logger.log(`[chat] pendingAction prepared=${pendingAction != null} type=${pendingAction?.type}`);
         if (pendingAction) {
           return this.buildChatResponse(
             this.buildPendingActionReply(pendingAction, locale),
@@ -766,7 +770,7 @@ export class ChatbotService {
       };
     }
 
-    if (this.isTaskCreationIntent(message)) {
+    if (this.isTaskCreationIntent(message) || this.isMessageToSpecialistIntent(message)) {
       return {
         strategy: 'smart_model',
         complexity: 'complex',
@@ -1550,6 +1554,13 @@ ${this.outputLanguageRule(locale)}`;
     );
   }
 
+  private isMessageToSpecialistIntent(message: string): boolean {
+    const normalized = this.normalizeQuestion(message);
+    return /(envoyer|envoie|envoyer un message|message a|message au|envoie a|envoie au|specialiste|medecin|psychologue|orthophoniste|ergotherapeute|doctor|send message|send a message|message to)/.test(
+      normalized,
+    );
+  }
+
   private shouldUseSmartModel(
     message: string,
     history: ChatMessage[],
@@ -1980,6 +1991,7 @@ ${this.outputLanguageRule(locale)}`;
   ): Promise<PendingAssistantAction | null> {
     const rawArgs = toolCall.function?.arguments;
     if (!rawArgs) {
+      this.logger.log('[prepareSendMessageToSpecialist] no rawArgs');
       return null;
     }
 
@@ -1998,6 +2010,7 @@ ${this.outputLanguageRule(locale)}`;
 
     const specialistName = String(args.specialistName ?? '').trim();
     const message = String(args.message ?? '').trim();
+    this.logger.log(`[prepareSendMessageToSpecialist] specialistName="${specialistName}" message="${message.substring(0, 50)}..."`);
 
     if (!specialistName || !message) {
       throw new BadRequestException(
@@ -2023,6 +2036,7 @@ ${this.outputLanguageRule(locale)}`;
     }) as { _id?: Types.ObjectId; fullName?: string } | undefined;
 
     if (!matched || !matched._id) {
+      this.logger.log(`[prepareSendMessageToSpecialist] no specialist matched for "${specialistName}"`);
       throw new BadRequestException(
         this.translateLiteral(
           locale,
@@ -2033,6 +2047,7 @@ ${this.outputLanguageRule(locale)}`;
       );
     }
 
+    this.logger.log(`[prepareSendMessageToSpecialist] matched specialist=${matched.fullName} id=${matched._id.toString()}`);
     const specialistId = matched._id.toString();
 
     // Get or create conversation
