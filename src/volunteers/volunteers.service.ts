@@ -1640,9 +1640,8 @@ export class VolunteersService {
 
   private async _generateQrCodeDataUri(certificateId: string): Promise<string> {
     try {
-      // Use qrcode library to generate QR code
-      const QRCode = require('qrcode');
-      const qrCodeDataUrl = await QRCode.toDataURL(certificateId, {
+      const qrCode = nodeRequire('qrcode') as unknown as QrCodeModule;
+      const qrCodeDataUrl = await qrCode.toDataURL(certificateId, {
         errorCorrectionLevel: 'M',
         type: 'image/png',
         width: 256,
