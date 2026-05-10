@@ -132,7 +132,7 @@ export class RemindersService {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
-    return reminders
+    const result = reminders
       .map((r) => {
         const reminderData = this.formatReminder(r);
         // Add completion status for today
@@ -156,8 +156,20 @@ export class RemindersService {
             .toLowerCase();
           return r.daysOfWeek?.includes(dayName);
         }
+        if (r.frequency === ReminderFrequency.ONCE) {
+          // One-time reminders only appear on their creation day
+          const cd = r.createdAt
+            ? new Date(r.createdAt).toISOString().split('T')[0]
+            : todayStr;
+          return cd === todayStr;
+        }
         return true;
       });
+
+    this.logger.debug(
+      `getTodayReminders childId=${childId} today=${todayStr} raw=${reminders.length} filtered=${result.length}`,
+    );
+    return result;
   }
 
   /**
@@ -220,7 +232,7 @@ export class RemindersService {
       const safeExtension = /^\.[a-z0-9]{1,8}$/.test(rawExtension)
         ? rawExtension
         : '';
-      const filename = `${reminder._id.toString()}_${timestamp}_${new Types.ObjectId().toString()}${safeExtension}`;
+      const filename = `${(reminder as unknown as { _id: Types.ObjectId })._id.toString()}_${timestamp}_${new Types.ObjectId().toString()}${safeExtension}`;
       const filepath = path.join(uploadsDir, filename);
 
       // Save file
@@ -450,7 +462,7 @@ export class RemindersService {
    */
   private formatReminder(reminder: TaskReminderDocument) {
     return {
-      id: reminder._id.toString(),
+      id: (reminder as unknown as { _id: Types.ObjectId })._id.toString(),
       childId: reminder.childId.toString(),
       createdBy: reminder.createdBy.toString(),
       type: reminder.type,
