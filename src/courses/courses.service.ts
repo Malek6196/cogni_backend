@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Course } from './schemas/course.schema';
@@ -35,13 +39,32 @@ export class CoursesService {
     return undefined;
   }
 
-  private calculateEnrollmentTimeline(enrollment: Record<string, unknown>) {
-    const startedAt = this.toOptionalDate(enrollment.createdAt) ?? new Date();
-    const durationDays = CoursesService.defaultCourseDurationDays;
-    const endsAt = new Date(
-      startedAt.getTime() + durationDays * CoursesService.millisecondsPerDay,
+  private calculateEnrollmentTimeline(
+    enrollment: Record<string, unknown>,
+    course?: Record<string, unknown> | null,
+  ) {
+    const createdAt = this.toOptionalDate(enrollment.createdAt) ?? new Date();
+    const courseStart = this.toOptionalDate(course?.startDate);
+    const courseEnd = this.toOptionalDate(course?.endDate);
+    const startedAt = courseStart ?? createdAt;
+    const fallbackEndsAt = new Date(
+      startedAt.getTime() +
+        CoursesService.defaultCourseDurationDays *
+          CoursesService.millisecondsPerDay,
+    );
+    const endsAt =
+      courseEnd && courseEnd.getTime() > startedAt.getTime()
+        ? courseEnd
+        : fallbackEndsAt;
+    const durationDays = Math.max(
+      1,
+      Math.ceil(
+        (endsAt.getTime() - startedAt.getTime()) /
+          CoursesService.millisecondsPerDay,
+      ),
     );
     const now = new Date();
+    const hasStarted = now.getTime() >= startedAt.getTime();
     const elapsedDays = Math.max(
       0,
       Math.floor(
@@ -49,10 +72,12 @@ export class CoursesService {
           CoursesService.millisecondsPerDay,
       ),
     );
-    const timelineProgress = Math.min(
-      100,
-      Math.max(0, Math.floor((elapsedDays / durationDays) * 100)),
-    );
+    const timelineProgress = hasStarted
+      ? Math.min(
+          100,
+          Math.max(0, Math.floor((elapsedDays / durationDays) * 100)),
+        )
+      : 0;
     const storedProgress =
       typeof enrollment.progressPercent === 'number'
         ? enrollment.progressPercent
@@ -64,23 +89,36 @@ export class CoursesService {
     const status =
       progressPercent >= 100
         ? 'completed'
-        : progressPercent > 0
+        : hasStarted
           ? 'in_progress'
           : 'enrolled';
     const completedAt =
       this.toOptionalDate(enrollment.completedAt) ??
       (status === 'completed' ? endsAt : undefined);
+    const daysUntilStart = Math.max(
+      0,
+      Math.ceil(
+        (startedAt.getTime() - now.getTime()) /
+          CoursesService.millisecondsPerDay,
+      ),
+    );
+    const canCancel =
+      status === 'enrolled' &&
+      progressPercent === 0 &&
+      startedAt.getTime() > now.getTime();
 
     return {
       startedAt,
       endsAt,
       durationDays,
+      daysUntilStart,
       daysElapsed: Math.min(elapsedDays, durationDays),
       remainingDays: Math.max(durationDays - elapsedDays, 0),
       progressPercent,
       status,
       completedAt,
       progressSource: 'timeline',
+      canCancel,
     };
   }
 
@@ -179,8 +217,8 @@ export class CoursesService {
       .exec();
     return list.map((e) => {
       const o = e as Record<string, unknown>;
-      const timeline = this.calculateEnrollmentTimeline(o);
       const course = o.courseId as Record<string, unknown> | null;
+      const timeline = this.calculateEnrollmentTimeline(o, course);
       const courseId =
         this.idToString(course?._id) ?? this.idToString(o.courseId);
       return {
@@ -192,9 +230,11 @@ export class CoursesService {
         startedAt: timeline.startedAt,
         endsAt: timeline.endsAt,
         durationDays: timeline.durationDays,
+        daysUntilStart: timeline.daysUntilStart,
         daysElapsed: timeline.daysElapsed,
         remainingDays: timeline.remainingDays,
         progressSource: timeline.progressSource,
+        canCancel: timeline.canCancel,
         course: course
           ? {
               id: courseId,
@@ -229,15 +269,15 @@ export class CoursesService {
       .populate('userId', 'fullName email')
       .populate(
         'courseId',
-        'title slug isQualificationCourse courseType certification',
+        'title slug isQualificationCourse startDate endDate courseType certification',
       )
       .sort({ updatedAt: -1 })
       .lean()
       .exec();
     return list.map((e) => {
       const o = e as Record<string, unknown>;
-      const timeline = this.calculateEnrollmentTimeline(o);
       const course = o.courseId as Record<string, unknown> | null;
+      const timeline = this.calculateEnrollmentTimeline(o, course);
       const user = o.userId as Record<string, unknown> | null;
       const courseId =
         this.idToString(course?._id) ?? this.idToString(o.courseId);
@@ -251,9 +291,11 @@ export class CoursesService {
         startedAt: timeline.startedAt,
         endsAt: timeline.endsAt,
         durationDays: timeline.durationDays,
+        daysUntilStart: timeline.daysUntilStart,
         daysElapsed: timeline.daysElapsed,
         remainingDays: timeline.remainingDays,
         progressSource: timeline.progressSource,
+        canCancel: timeline.canCancel,
         user: user ? { fullName: user.fullName, email: user.email } : null,
         course: course
           ? {
@@ -261,6 +303,8 @@ export class CoursesService {
               title: course.title,
               slug: course.slug,
               isQualificationCourse: course.isQualificationCourse,
+              startDate: course.startDate,
+              endDate: course.endDate,
               courseType: course.courseType,
               certification: course.certification,
               durationDays: timeline.durationDays,
@@ -318,6 +362,35 @@ export class CoursesService {
     return this.myEnrollments(userId);
   }
 
+  async cancelEnrollment(userId: string, enrollmentId: string) {
+    const enrollment = await this.enrollmentModel
+      .findOne({
+        _id: enrollmentId,
+        userId: new Types.ObjectId(userId),
+      })
+      .populate('courseId', 'startDate endDate')
+      .lean()
+      .exec();
+    if (!enrollment) throw new NotFoundException('Enrollment not found');
+
+    const enrollmentRecord = enrollment as Record<string, unknown>;
+    const course = enrollmentRecord.courseId as Record<string, unknown> | null;
+    const timeline = this.calculateEnrollmentTimeline(enrollmentRecord, course);
+    if (!timeline.canCancel) {
+      throw new ForbiddenException(
+        'Enrollment can only be cancelled before the course starts',
+      );
+    }
+
+    await this.enrollmentModel
+      .deleteOne({
+        _id: enrollmentId,
+        userId: new Types.ObjectId(userId),
+      })
+      .exec();
+    return this.myEnrollments(userId);
+  }
+
   /**
    * Returns true if the user has at least one completed enrollment in a qualification course.
    */
@@ -329,10 +402,13 @@ export class CoursesService {
       .exec();
     for (const e of list) {
       const enrollment = e as Record<string, unknown>;
-      const timeline = this.calculateEnrollmentTimeline(enrollment);
       const course = enrollment.courseId as {
         isQualificationCourse?: boolean;
       } | null;
+      const timeline = this.calculateEnrollmentTimeline(
+        enrollment,
+        course as Record<string, unknown> | null,
+      );
       if (course?.isQualificationCourse && timeline.progressPercent >= 100) {
         return true;
       }

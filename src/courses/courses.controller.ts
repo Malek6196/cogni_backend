@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Post,
   Patch,
@@ -128,5 +129,19 @@ export class CoursesController {
         ? progressPercent
         : parseInt(String(progressPercent), 10) || 0;
     return this.coursesService.updateProgress(req.user.id, enrollmentId, value);
+  }
+
+  @Delete('enrollments/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Cancel an enrollment before the course starts',
+  })
+  @ApiResponse({ status: 200, description: 'Updated enrollments' })
+  async cancelEnrollment(
+    @Request() req: { user: { id: string } },
+    @Param('id') enrollmentId: string,
+  ) {
+    return this.coursesService.cancelEnrollment(req.user.id, enrollmentId);
   }
 }
