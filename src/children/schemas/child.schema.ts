@@ -13,9 +13,9 @@ export class Child {
 
   @Prop({
     required: true,
-    enum: ['male', 'female'],
+    enum: ['male', 'female', 'other'],
   })
-  gender!: 'male' | 'female';
+  gender!: 'male' | 'female' | 'other';
 
   @Prop()
   diagnosis?: string;

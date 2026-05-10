@@ -193,9 +193,17 @@
         color: #64748b;
       }
 
+      .supervisor-signature {
+        width: 28mm;
+        height: 15mm;
+        object-fit: contain;
+        display: block;
+        margin: 2mm auto 1mm;
+      }
+
       .logo-circle {
-        width: 48mm;
-        height: 48mm;
+        width: 38mm;
+        height: 38mm;
         border-radius: 50%;
         border: 2px solid rgba(163, 218, 225, 0.3);
         background: #ffffff;
@@ -204,12 +212,14 @@
         align-items: center;
         justify-content: center;
         margin: 0 auto;
+        padding: 3mm;
       }
 
       .logo-circle img {
-        width: 85%;
-        height: 85%;
+        width: 100%;
+        height: 100%;
         object-fit: contain;
+        border-radius: 50%;
       }
 
       /* Footer */
@@ -240,6 +250,18 @@
         font-size: 14pt;
         font-weight: bold;
         color: #1e293b;
+      }
+
+      .qr-code {
+        padding: 3mm;
+        background: #ffffff;
+        border: 1px solid #d8c59f;
+      }
+
+      .qr-code img {
+        display: block;
+        width: 24mm;
+        height: 24mm;
       }
     </style>
   </head>
@@ -275,15 +297,12 @@
               <div class="supervisor-name">{{SUPERVISOR_NAME}}</div>
             </div>
             <div class="label-main">PROGRAM SUPERVISOR</div>
+            <img class="supervisor-signature" src="{{SUPERVISOR_SIGNATURE_DATA_URI}}" alt="" />
             <div class="label-sub">SUPERVISEUR DU PROGRAMME</div>
           </div>
           
           <div class="logo-circle">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" style="width: 100%; height: 100%;">
-              <circle cx="50" cy="50" r="45" fill="#a3dae1" opacity="0.2"/>
-              <text x="50" y="45" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#1e293b" text-anchor="middle">CogniCare</text>
-              <text x="50" y="60" font-family="Arial, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Certification</text>
-            </svg>
+            <img src="{{LOGO_DATA_URI}}" alt="CogniCare Logo" />
           </div>
           
           <div class="date-section">
@@ -296,15 +315,15 @@
         </div>
       </div>
 
-      <!-- Footer with certificate ID -->
+      <!-- Footer with certificate ID and QR code -->
       <div class="footer">
         <div class="cert-id">
           <div class="cert-id-label">CERTIFICATE ID:</div>
           <div class="cert-id-value">{{CERTIFICATE_ID}}</div>
         </div>
         
-        <div style="font-size: 9pt; color: #64748b; font-style: italic;">
-          Scan at cognicare.app/verify
+        <div class="qr-code">
+          <img src="{{QR_CODE_DATA_URI}}" alt="QR Code" />
         </div>
       </div>
     </div>

@@ -21,10 +21,10 @@ export class CreateDonationDto {
 
   @ApiProperty({
     description:
-      'Catégorie du don (0=Vêtements, 1=Mobilier, 2=Jouets, 3=Bijoux, 4=Autre, 5=Mobilité)',
+      'Catégorie du don (0=Vêtements, 1=Mobilier, 2=Jouets, 3=Bijoux, 4=Autre)',
   })
   @IsInt()
-  @IsIn([0, 1, 2, 3, 4, 5])
+  @IsIn([0, 1, 2, 3, 4])
   category: number;
 
   /** 0: Neuf, 1: Très bon état, 2: Bon état */

@@ -25,7 +25,6 @@ export function normalizeMimeType(mimetype: string | undefined): string {
 }
 
 export function isAllowedImageMime(mimetype: string): boolean {
-  if (!mimetype || mimetype === 'application/octet-stream') return true;
   return (
     IMAGE_MIME_ALLOWLIST.includes(
       mimetype as (typeof IMAGE_MIME_ALLOWLIST)[number],

@@ -23,11 +23,11 @@ export class UpdateChildDto {
   @ApiPropertyOptional({
     description: 'Child gender',
     example: 'male',
-    enum: ['male', 'female'],
+    enum: ['male', 'female', 'other'],
   })
   @IsOptional()
-  @IsEnum(['male', 'female'])
-  gender?: 'male' | 'female';
+  @IsEnum(['male', 'female', 'other'])
+  gender?: 'male' | 'female' | 'other';
 
   @ApiPropertyOptional({
     description: 'Child diagnosis or medical condition',

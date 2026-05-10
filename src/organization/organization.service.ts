@@ -1440,7 +1440,7 @@ export class OrganizationService {
       let backendUrl =
         this.configService.get<string>('BACKEND_URL') ||
         this.configService.get<string>('RENDER_EXTERNAL_URL') ||
-        'https://cognicare-mobile-h4ct.onrender.com';
+        'http://localhost:3000';
       backendUrl = backendUrl.replace(/\/$/, '');
       activationUrl = `${backendUrl}/api/v1/organization/invitations/${token}/accept`;
       rejectUrl = `${backendUrl}/api/v1/organization/invitations/${token}/reject`;
@@ -2155,7 +2155,7 @@ export class OrganizationService {
 
     // Generate accept/reject URLs
     const baseUrl =
-      this.configService.get<string>('BACKEND_URL') || 'https://cognicare-mobile-h4ct.onrender.com';
+      this.configService.get<string>('BACKEND_URL') || 'http://localhost:3000';
     const acceptUrl = `${baseUrl}/api/v1/organization/admin/invitations/${token}/accept`;
     const rejectUrl = `${baseUrl}/api/v1/organization/admin/invitations/${token}/reject`;
 

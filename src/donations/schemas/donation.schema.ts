@@ -17,7 +17,7 @@ export class Donation {
   @Prop({ required: true })
   description: string;
 
-  /** 0: Vêtements, 1: Mobilier, 2: Matériel d'éveil, 3: Bijoux, 4: Autre, 5: Mobilité */
+  /** 0: Vêtements, 1: Mobilier, 2: Matériel d'éveil, 3: Bijoux, 4: Autre */
   @Prop({ required: true })
   category: number;
 
