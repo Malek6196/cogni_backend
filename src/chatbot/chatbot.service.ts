@@ -667,17 +667,23 @@ export class ChatbotService {
       this.logger.warn(
         `Family assistant fallback for user ${userId}: ${(error as Error).message}`,
       );
+      // Preserve user-facing errors (e.g. reminder not found, missing fields)
+      const userFacingError =
+        error instanceof BadRequestException
+          ? (error as BadRequestException).message
+          : null;
       return this.buildChatResponse(
-        this.translateLiteral(
-          locale,
-          "Je suis temporairement indisponible pour préparer une action. Vous pouvez toujours créer le rappel manuellement depuis l'écran routine de votre enfant.",
-          'I am temporarily unavailable to prepare this action. You can still create the reminder manually from your child routine screen.',
-          'أنا غير متاح مؤقتًا لتحضير هذا الإجراء. يمكنك دائمًا إنشاء التذكير يدويًا من شاشة روتين طفلك.',
-        ),
+        userFacingError ??
+          this.translateLiteral(
+            locale,
+            "Je suis temporairement indisponible pour préparer cette action. Veuillez réessayer dans un instant.",
+            'I am temporarily unavailable to prepare this action. Please try again in a moment.',
+            'أنا غير متاح مؤقتًا لتحضير هذا الإجراء. يرجى المحاولة مرة أخرى بعد لحظات.',
+          ),
         this.buildMeta(
           decision.strategy,
           decision.complexity,
-          'family_provider_fallback',
+          userFacingError ? 'family_action_error' : 'family_provider_fallback',
           {
             refreshed,
           },
@@ -891,7 +897,7 @@ ${childrenInfo}
 ${currentChildHint}Tu peux répondre aux questions sur les routines, les rappels, les progrès, les suggestions thérapeutiques générales (PECS, TEACCH, activités sensorielles) et la planification quotidienne.
 Si l'utilisateur demande clairement d'ajouter une tâche ou un rappel, prépare l'action avec l'outil "prepare_routine_task". N'exécute jamais l'action directement.
 Si l'utilisateur demande clairement d'envoyer un message à un spécialiste (psychologue, orthophoniste, ergothérapeute, médecin), prépare l'action avec l'outil "send_message_to_specialist". N'exécute jamais l'action directement.
-Si l'utilisateur demande clairement de supprimer un rappel ou une tâche, prépare l'action avec l'outil "delete_task_reminder". N'exécute jamais l'action directement.
+Si l'utilisateur demande explicitement de supprimer, retirer ou annuler un rappel ou une tâche existante, tu DOIS utiliser l'outil "delete_task_reminder" et fournir l'ID de l'enfant + le titre (ou un mot-clé) du rappel à supprimer. N'exécute jamais l'action directement.
 Si l'utilisateur a un seul enfant et qu'aucun enfant actuel n'est précisé, utilise automatiquement son ID. S'il y en a plusieurs et que l'enfant n'est pas clair, demande d'abord le prénom.
 Ne demande jamais l'ID directement à l'utilisateur.
 Sois chaleureux, concis (2 à 4 phrases sauf si demandé), bienveillant, et ne donne jamais de diagnostic médical.
@@ -2205,18 +2211,26 @@ ${this.outputLanguageRule(locale)}`;
     // Find active reminders for the child
     const reminders = await this.remindersService.findByChildId(childId, userId);
     const lowerQuery = titleQuery.toLowerCase();
-    const matched = reminders.find((r: any) =>
+    // Try exact/partial match first, then fallback to word token overlap
+    let matched = reminders.find((r: any) =>
       String(r.title ?? '').toLowerCase().includes(lowerQuery),
     );
+    if (!matched) {
+      const queryWords = lowerQuery.split(/\s+/).filter(w => w.length >= 3);
+      matched = reminders.find((r: any) => {
+        const titleWords = String(r.title ?? '').toLowerCase().split(/\s+/);
+        return queryWords.some(qw => titleWords.some(tw => tw.includes(qw) || qw.includes(tw)));
+      });
+    }
 
     if (!matched) {
-      this.logger.log(`[prepareDeleteReminder] no reminder matched for "${titleQuery}"`);
+      this.logger.log(`[prepareDeleteReminder] no reminder matched for "${titleQuery}". Available titles: ${reminders.map((r: any) => r.title).join(', ')}`);
       throw new BadRequestException(
         this.translateLiteral(
           locale,
-          `Aucun rappel trouvé pour "${titleQuery}". Vérifiez le titre et réessayez.`,
-          `No reminder found for "${titleQuery}". Please check the title and try again.`,
-          `لم يتم العثور على تذكير بعنوان "${titleQuery}". تحقق من العنوان وحاول مرة أخرى.`,
+          `Aucun rappel trouvé pour "${titleQuery}". Les rappels actifs sont : ${reminders.map((r: any) => `"${r.title}"`).join(', ')}.`,
+          `No reminder found for "${titleQuery}". Active reminders are: ${reminders.map((r: any) => `"${r.title}"`).join(', ')}.`,
+          `لم يتم العثور على تذكير بعنوان "${titleQuery}". التذكيرات النشطة: ${reminders.map((r: any) => `"${r.title}"`).join(', ')}.`,
         ),
       );
     }
