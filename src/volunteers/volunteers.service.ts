@@ -79,6 +79,12 @@ const DEFAULT_CERT_TEMPLATE_JPG_PATH = path.join(
   'certificates',
   'caregiver-certificate-template.jpg',
 );
+const DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH = path.join(
+  process.cwd(),
+  'assets',
+  'certificates',
+  'program_supervisor_signature.png',
+);
 
 /** Specialist roles that have a direct careProviderType equivalent. */
 const SPECIALIST_ROLES = [
