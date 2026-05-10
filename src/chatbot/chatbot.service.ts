@@ -579,12 +579,17 @@ export class ChatbotService {
         const toolCall = toolCalls[0] as {
           function?: { name?: string; arguments?: string };
         };
+        const currentChildId =
+          context.uiContext && typeof context.uiContext === 'object'
+            ? (context.uiContext as Record<string, unknown>).currentChildId
+            : undefined;
         const pendingAction = await this.preparePendingAction(
           userId,
           'family',
           toolCall,
           children,
           locale,
+          typeof currentChildId === 'string' ? currentChildId : undefined,
         );
         if (pendingAction) {
           return this.buildChatResponse(
@@ -1792,6 +1797,7 @@ ${this.outputLanguageRule(locale)}`;
     },
     children: unknown[],
     locale: AssistantLocale,
+    currentChildId?: string,
   ): Promise<PendingAssistantAction | null> {
     if (toolCall.function?.name !== 'prepare_routine_task') {
       return null;
@@ -1819,12 +1825,13 @@ ${this.outputLanguageRule(locale)}`;
       throw new BadRequestException('Assistant action payload is invalid');
     }
 
-    const childId = String(args.childId ?? '').trim();
+    // If user is viewing a specific child's screen, force that childId
+    const resolvedChildId = currentChildId?.trim() || String(args.childId ?? '').trim();
     const title = String(args.title ?? '').trim();
     const description = String(args.description ?? '').trim();
     const time = this.normalizeTime(args.time);
 
-    if (!childId || !title || !time) {
+    if (!resolvedChildId || !title || !time) {
       throw new BadRequestException(
         'Assistant action is missing required fields',
       );
@@ -1834,17 +1841,17 @@ ${this.outputLanguageRule(locale)}`;
       const child = entry as {
         _id?: { toString(): string };
         id?: { toString(): string };
+        fullName?: string;
       };
       return (
-        child._id?.toString?.() === childId ||
-        child.id?.toString?.() === childId
+        child._id?.toString() === resolvedChildId || child.id?.toString() === resolvedChildId
       );
     }) as { fullName?: string } | undefined;
     if (!matchingChild) {
       throw new BadRequestException('Assistant selected an unknown child');
     }
 
-    await this.childAccessService.assertCanAccessChild(childId, userId);
+    await this.childAccessService.assertCanAccessChild(resolvedChildId, userId);
 
     const confirmToken = await this.jwtService.signAsync(
       {
@@ -1854,7 +1861,7 @@ ${this.outputLanguageRule(locale)}`;
         locale,
         action: {
           type: 'create_task_reminder',
-          childId,
+          childId: resolvedChildId,
           title,
           description: description || undefined,
           time,
@@ -1882,7 +1889,7 @@ ${this.outputLanguageRule(locale)}`;
       ),
       confirmToken,
       preview: {
-        childId,
+        childId: resolvedChildId,
         childName:
           matchingChild.fullName ??
           this.translateLiteral(locale, 'Enfant', 'Child', 'الطفل'),

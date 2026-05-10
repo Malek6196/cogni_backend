@@ -984,56 +984,21 @@
     "order": 1
   },
   {
-    "title": "PECS — Système de communication par échange d'images",
-    "description": "Introduction au PECS, ses phases clés, la mise en place pratique avec des supports visuels et les bonnes pratiques pour généraliser l'usage au quotidien.",
+    "title": "PECs — Système de communication par échange d'images",
+    "description": "Introduction au PECS, pourquoi il fonctionne pour les enfants non verbaux ou peu verbaux, et étapes pratiques pour le mettre en place avec des supports visuels.",
     "contentSections": [
       {
         "type": "text",
         "title": "PECS / Communication",
-        "content": "Le PECS aide l'enfant à communiquer un besoin ou un choix en échangeant une image. Il soutient l'initiative de communication, surtout quand le langage oral est limité ou en développement.",
+        "content": "Content from Autism Speaks Caregiver Skills Training. Run the scraper when the site is reachable.",
         "order": 0
-      },
-      {
-        "type": "list",
-        "title": "Mettre en place les supports",
-        "listItems": [
-          "Commencer avec des objets très motivants pour l'enfant.",
-          "Utiliser des images simples, claires et faciles à manipuler.",
-          "Présenter peu de choix au début, puis augmenter progressivement.",
-          "Renforcer immédiatement l'échange par l'objet ou l'activité demandée."
-        ],
-        "order": 1
-      },
-      {
-        "type": "text",
-        "title": "Les phases du PECS",
-        "content": "Le PECS progresse par étapes: d'abord l'échange simple d'image, puis la discrimination de plusieurs images, la construction de phrases courtes et enfin l'usage plus spontané dans des contextes variés. Chaque phase doit être consolidée avant de passer à la suivante.",
-        "order": 2
-      },
-      {
-        "type": "list",
-        "title": "Aide, guidage et autonomie",
-        "listItems": [
-          "Au début, guider l'enfant avec juste assez d'aide pour réussir l'échange.",
-          "Réduire progressivement l’aide pour encourager l’initiative.",
-          "Observer ce qui motive vraiment l'enfant afin de maintenir l'intérêt.",
-          "Vérifier que l'image reste accessible, stable et toujours associée au même objet ou à la même action."
-        ],
-        "order": 3
-      },
-      {
-        "type": "text",
-        "title": "Généraliser au quotidien",
-        "content": "Le système devient utile quand il est utilisé dans plusieurs contextes: repas, jeu, sortie, école et soins. La cohérence entre adultes aide l'enfant à comprendre que son message fonctionne partout. Il est aussi important de noter les progrès pour repérer quand augmenter le nombre d'images ou enrichir les demandes.",
-        "order": 4
       }
     ],
     "sourceUrl": "https://www.autismspeaks.org/caregiver-skills-training-program",
     "topics": [
       "PECS",
       "communication",
-      "support visuel",
-      "generalization"
+      "support visuel"
     ],
     "quiz": [
       {
@@ -1109,25 +1074,6 @@
         "correctIndex": 1,
         "order": 6,
         "type": "mcq"
-      },
-      {
-        "question": "Dans les premières phases du PECS, il faut surtout :",
-        "options": [
-          "Multiplier les consignes verbales longues",
-          "Laisser l'enfant deviner seul",
-          "Renforcer rapidement chaque échange réussi",
-          "Attendre qu'il parle avant d'utiliser les images"
-        ],
-        "correctIndex": 2,
-        "order": 7,
-        "type": "mcq"
-      },
-      {
-        "question": "Le PECS fonctionne mieux quand les images sont utilisées dans plusieurs contextes du quotidien.",
-        "options": ["Vrai", "Faux"],
-        "correctIndex": 0,
-        "order": 8,
-        "type": "true_false"
       }
     ],
     "approved": true,
@@ -1135,55 +1081,143 @@
   },
   {
     "title": "Méthode TEACCH",
-    "description": "Vue d'ensemble de l'enseignement structuré TEACCH : organisation visuelle, routines prévisibles, systèmes de travail et mise en œuvre à la maison, à l'école et en thérapie.",
+    "description": "Vue d'ensemble de l'enseignement structuré TEACCH : organisation visuelle, routines prévisibles et mise en œuvre à la maison et en milieu éducatif.",
     "contentSections": [
       {
-        "type": "text",
-        "title": "Enseignement structuré",
-        "content": "La méthode TEACCH organise l'espace, le temps et les activités pour rendre les attentes plus compréhensibles. Elle s'appuie sur les forces visuelles de nombreux enfants autistes.",
+        "type": "list",
+        "listItems": [
+          "UNC Chapel Hill",
+          "UNC Health",
+          "Intranet",
+          "Login"
+        ],
         "order": 0
       },
       {
         "type": "list",
-        "title": "Organisation visuelle",
         "listItems": [
-          "Délimiter clairement les espaces: travail, pause, jeu, repas.",
-          "Afficher une séquence visuelle des activités.",
-          "Montrer ce qui est terminé et ce qui vient ensuite.",
-          "Adapter la quantité de tâches au niveau d'énergie de l'enfant."
+          "Home",
+          "About Us",
+          "Clinical Services",
+          "Research",
+          "Regional Centers",
+          "Adult Services",
+          "Training",
+          "En Español",
+          "Resources"
         ],
         "order": 1
       },
       {
         "type": "text",
-        "title": "Systèmes de travail et autonomie",
-        "content": "Un système de travail clair indique à l'enfant quoi faire, combien de tâches il doit réaliser et comment savoir qu'il a terminé. Cette logique réduit l'incertitude, soutient l'autonomie et permet à l'adulte de diminuer progressivement les consignes verbales.",
+        "title": "TEACCH Secures Major NIH Grant for Autism Research",
+        "content": "",
         "order": 2
       },
       {
-        "type": "list",
-        "title": "Transitions et prévisibilité",
-        "listItems": [
-          "Prévenir les changements à l’avance avec un support visuel ou verbal court.",
-          "Utiliser des objets, pictogrammes ou plannings pour annoncer la suite.",
-          "Garder les routines aussi stables que possible entre les adultes.",
-          "Prévoir une pause ou un moment calme après une activité exigeante."
-        ],
+        "type": "text",
+        "title": "Dr. Laura Klinger, Executive Director, UNC TEACCH Autism Program,is the Principal Investigator for a new multi-university research study: Service Use and Needs for Autistic Adults. This study brings together researchers from six universities across the country to better understand the services autistic adults use, the gaps that exist, and how to improve access and quality of life across adulthood.",
+        "content": "",
         "order": 3
       },
       {
         "type": "text",
-        "title": "À la maison et à l’école",
-        "content": "Un planning simple, des paniers d'activités et des routines répétées peuvent rendre le quotidien plus fluide. L'important est de commencer petit, d'ajuster selon la réaction de l'enfant et de construire des repères identiques entre la maison, l'école et les séances.",
+        "title": "Learn More",
+        "content": "",
         "order": 4
+      },
+      {
+        "type": "text",
+        "title": "News and Featured Programs",
+        "content": "",
+        "order": 5
+      },
+      {
+        "type": "text",
+        "title": "Upcoming TEACCH Trainings",
+        "content": "",
+        "order": 6
+      },
+      {
+        "type": "text",
+        "content": "Contact Us",
+        "videoUrl": null,
+        "order": 7
+      },
+      {
+        "type": "text",
+        "content": "Mailing Address:CB# 7180 UNC-Chapel HillChapel Hill, NC 27599Physical Address:100 Renee Lynne CourtCarrboro, NC 27510P:919-966-2174F:919.966.4127Email:teacch@unc.edu",
+        "videoUrl": null,
+        "order": 8
+      },
+      {
+        "type": "text",
+        "title": "Find Us on Social Media",
+        "content": "",
+        "order": 9
+      },
+      {
+        "type": "list",
+        "listItems": [
+          "Facebook",
+          "Instagram",
+          "X",
+          "Pinterest"
+        ],
+        "order": 10
+      },
+      {
+        "type": "text",
+        "content": "TEACCH is a registered trademark of the University of North Carolina TEACCH® Autism Program",
+        "videoUrl": null,
+        "order": 11
+      },
+      {
+        "type": "text",
+        "content": "TEACCH Staff Intranet",
+        "videoUrl": null,
+        "order": 12
+      },
+      {
+        "type": "list",
+        "listItems": [
+          "© 2026 TEACCH® Autism Program",
+          "Accessibility",
+          "Privacy Statement",
+          "Intranet"
+        ],
+        "order": 13
+      },
+      {
+        "type": "text",
+        "content": "© 2026 TEACCH® Autism Program",
+        "videoUrl": null,
+        "order": 14
+      },
+      {
+        "type": "list",
+        "listItems": [
+          "Notice of Privacy Practices",
+          "Aviso de Practicas Privadas",
+          "Nondiscrimination Notice",
+          "Aviso de no Discriminacion"
+        ],
+        "order": 15
+      },
+      {
+        "type": "list",
+        "listItems": [
+          "Surprise Billing and Good Faith Estimate Notices",
+          "Avisos de facturas médicas sorpresas y avisos de presupuestos de buena fe"
+        ],
+        "order": 16
       }
     ],
     "sourceUrl": "https://teacch.com/",
     "topics": [
       "TEACCH",
       "enseignement structuré",
-      "organisation visuelle",
-      "indépendance"
+      "organisation visuelle"
     ],
     "quiz": [
       {
@@ -1259,20 +1293,6 @@
         "correctIndex": 1,
         "order": 6,
         "type": "mcq"
-      },
-      {
-        "question": "En TEACCH, un système de travail aide l'enfant à savoir quoi faire, combien de tâches faire et quand c'est terminé.",
-        "options": ["Vrai", "Faux"],
-        "correctIndex": 0,
-        "order": 7,
-        "type": "true_false"
-      },
-      {
-        "question": "La méthode TEACCH fonctionne mieux quand les repères visuels et les routines restent cohérents entre les différents adultes.",
-        "options": ["Vrai", "Faux"],
-        "correctIndex": 0,
-        "order": 8,
-        "type": "true_false"
       }
     ],
     "approved": true,
