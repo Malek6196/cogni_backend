@@ -79,12 +79,6 @@ const DEFAULT_CERT_TEMPLATE_JPG_PATH = path.join(
   'certificates',
   'caregiver-certificate-template.jpg',
 );
-const DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH = path.join(
-  process.cwd(),
-  'assets',
-  'certificates',
-  'program_supervisor_signature.png',
-);
 
 /** Specialist roles that have a direct careProviderType equivalent. */
 const SPECIALIST_ROLES = [
@@ -1065,12 +1059,6 @@ export class VolunteersService {
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const { width, height } = page.getSize();
-    const signatureBytes = await this._readCertificateAsset(
-      DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH,
-    );
-    const supervisorSignature = signatureBytes
-      ? await pdfDoc.embedPng(signatureBytes)
-      : null;
 
     const fullName = this._safeCertificateText(input.fullName, 80);
     const organization = this._safeCertificateText(
@@ -1173,14 +1161,6 @@ export class VolunteersService {
         font: fontRegular,
         color: textColor,
       });
-      if (supervisorSignature) {
-        page.drawImage(supervisorSignature, {
-          x: width * 0.128,
-          y: height * 0.107,
-          width: width * 0.105,
-          height: height * 0.068,
-        });
-      }
       page.drawText(authority, {
         x: width * 0.68,
         y: height * 0.182,
@@ -1189,277 +1169,65 @@ export class VolunteersService {
         color: textColor,
       });
     } else {
-      const navy = rgb(0.1, 0.16, 0.27);
-      const slate = rgb(0.39, 0.45, 0.55);
-      const aqua = rgb(0.64, 0.85, 0.88);
-      const gold = rgb(0.85, 0.77, 0.62);
-      const brown = rgb(0.47, 0.35, 0.1);
-      const lightGold = rgb(0.96, 0.9, 0.79);
-      const borderInset = 26;
-
-      page.drawRectangle({
-        x: borderInset,
-        y: borderInset,
-        width: width - borderInset * 2,
-        height: height - borderInset * 2,
-        borderColor: gold,
-        borderWidth: 1.5,
-        color: rgb(1, 1, 1),
-      });
-
-      const cornerSize = 68;
-      const cornerInset = 54;
-      const cornerThickness = 7;
-      page.drawLine({
-        start: { x: cornerInset, y: height - cornerInset },
-        end: { x: cornerInset + cornerSize, y: height - cornerInset },
-        thickness: cornerThickness,
-        color: gold,
-      });
-      page.drawLine({
-        start: { x: cornerInset, y: height - cornerInset },
-        end: { x: cornerInset, y: height - cornerInset - cornerSize },
-        thickness: cornerThickness,
-        color: gold,
-      });
-      page.drawLine({
-        start: { x: width - cornerInset, y: height - cornerInset },
-        end: { x: width - cornerInset - cornerSize, y: height - cornerInset },
-        thickness: cornerThickness,
-        color: gold,
-      });
-      page.drawLine({
-        start: { x: width - cornerInset, y: height - cornerInset },
-        end: { x: width - cornerInset, y: height - cornerInset - cornerSize },
-        thickness: cornerThickness,
-        color: gold,
-      });
-      page.drawLine({
-        start: { x: cornerInset, y: cornerInset },
-        end: { x: cornerInset + cornerSize, y: cornerInset },
-        thickness: cornerThickness,
-        color: gold,
-      });
-      page.drawLine({
-        start: { x: cornerInset, y: cornerInset },
-        end: { x: cornerInset, y: cornerInset + cornerSize },
-        thickness: cornerThickness,
-        color: gold,
-      });
-      page.drawLine({
-        start: { x: width - cornerInset, y: cornerInset },
-        end: { x: width - cornerInset - cornerSize, y: cornerInset },
-        thickness: cornerThickness,
-        color: gold,
-      });
-      page.drawLine({
-        start: { x: width - cornerInset, y: cornerInset },
-        end: { x: width - cornerInset, y: cornerInset + cornerSize },
-        thickness: cornerThickness,
-        color: gold,
-      });
-
+      const title = 'Caregiver Certification';
       this._drawCenteredText(
         page,
-        'C E R T I F I C A T E   O F   A C H I E V E M E N T',
+        title,
         width,
-        500,
-        14,
+        height * 0.7,
+        24,
         fontBold,
-        aqua,
+        rgb(0.08, 0.16, 0.3),
       );
       this._drawCenteredText(
         page,
-        'CERTIFICAT DE RÉUSSITE',
+        fullName,
         width,
-        474,
-        14,
-        fontBold,
-        slate,
-      );
-      page.drawLine({
-        start: { x: width / 2 - 36, y: 442 },
-        end: { x: width / 2 + 36, y: 442 },
-        thickness: 1,
-        color: aqua,
-      });
-      this._drawCenteredText(
-        page,
-        'This is to certify that / Ceci certifie que',
-        width,
-        402,
-        15,
-        fontRegular,
-        slate,
-      );
-      this._drawCenteredText(
-        page,
-        fullName.toUpperCase(),
-        width,
-        342,
-        31,
-        fontBold,
-        brown,
-      );
-      this._drawCenteredText(
-        page,
-        'has successfully completed the professional assessment with a score of',
-        width,
-        292,
-        14,
-        fontRegular,
-        slate,
-      );
-      this._drawCenteredText(
-        page,
-        "a complété avec succès l'évaluation professionnelle avec un score de",
-        width,
-        266,
-        14,
-        fontRegular,
-        slate,
-      );
-      this._drawCenteredText(
-        page,
-        quizScoreText,
-        width,
-        214,
+        height * 0.52,
         32,
         fontBold,
-        aqua,
+        rgb(0.1, 0.22, 0.35),
       );
-      page.drawLine({
-        start: { x: width / 2 - 45, y: 202 },
-        end: { x: width / 2 + 45, y: 202 },
-        thickness: 1,
-        color: lightGold,
-      });
-
-      const supervisorCenterX = 150;
-      const logoCenterX = width / 2;
-      const dateCenterX = width - 150;
-      page.drawLine({
-        start: { x: supervisorCenterX - 72, y: 166 },
-        end: { x: supervisorCenterX + 72, y: 166 },
-        thickness: 1,
-        color: rgb(0.82, 0.82, 0.82),
-      });
-      this._drawCenteredTextAt(
+      this._drawCenteredText(
         page,
-        supervisor,
-        supervisorCenterX,
-        180,
-        15,
-        fontBold,
-        aqua,
-      );
-      page.drawText('PROGRAM SUPERVISOR', {
-        x: supervisorCenterX - 74,
-        y: 135,
-        size: 10,
-        font: fontBold,
-        color: navy,
-      });
-      if (supervisorSignature) {
-        page.drawImage(supervisorSignature, {
-          x: supervisorCenterX - 48,
-          y: 82,
-          width: 96,
-          height: 48,
-        });
-      }
-      page.drawText('SUPERVISEUR DU PROGRAMME', {
-        x: supervisorCenterX - 77,
-        y: 70,
-        size: 8,
-        font: fontBold,
-        color: slate,
-      });
-
-      page.drawEllipse({
-        x: logoCenterX,
-        y: 126,
-        xScale: 42,
-        yScale: 42,
-        borderColor: rgb(0.88, 0.96, 0.97),
-        borderWidth: 2,
-        color: rgb(1, 1, 1),
-      });
-      this._drawCenteredTextAt(
-        page,
-        'CogniCare',
-        logoCenterX,
-        132,
-        9,
-        fontBold,
-        navy,
-      );
-      this._drawCenteredTextAt(
-        page,
-        'Certification',
-        logoCenterX,
-        119,
-        7,
+        `Organization: ${organization}`,
+        width,
+        height * 0.44,
+        14,
         fontRegular,
-        slate,
+        rgb(0.18, 0.23, 0.3),
       );
-
-      page.drawLine({
-        start: { x: dateCenterX - 72, y: 166 },
-        end: { x: dateCenterX + 72, y: 166 },
-        thickness: 1,
-        color: rgb(0.82, 0.82, 0.82),
-      });
-      this._drawCenteredTextAt(
+      this._drawCenteredText(
         page,
-        issueDate,
-        dateCenterX,
-        180,
-        16,
+        `Issued on ${issueDate}`,
+        width,
+        height * 0.39,
+        12,
         fontRegular,
-        navy,
+        rgb(0.28, 0.33, 0.42),
       );
-      page.drawText('DATE OF ISSUE', {
-        x: dateCenterX - 54,
-        y: 135,
-        size: 10,
-        font: fontBold,
-        color: navy,
-      });
-      page.drawText("DATE D'ÉMISSION", {
-        x: dateCenterX - 56,
-        y: 118,
-        size: 8,
-        font: fontBold,
-        color: slate,
-      });
 
-      page.drawLine({
-        start: { x: 70, y: 54 },
-        end: { x: width - 70, y: 54 },
-        thickness: 1,
-        color: gold,
-      });
-      page.drawText('CERTIFICATE ID:', {
-        x: 76,
-        y: 32,
-        size: 9,
-        font: fontBold,
-        color: slate,
-      });
-      page.drawText(input.certificateId, {
-        x: 76,
-        y: 17,
-        size: 12,
-        font: fontBold,
-        color: navy,
-      });
-      page.drawText('Scan at cognicare.app/verify', {
-        x: width - 210,
-        y: 28,
-        size: 8,
+      const footerColor = rgb(0.25, 0.3, 0.38);
+      page.drawText(`Certificate ID: ${input.certificateId}`, {
+        x: 48,
+        y: 40,
+        size: 11,
         font: fontRegular,
-        color: slate,
+        color: footerColor,
+      });
+      page.drawText('Verified by CogniCare', {
+        x: width - 180,
+        y: 40,
+        size: 11,
+        font: fontRegular,
+        color: footerColor,
+      });
+      page.drawText(`Quiz Score: ${quizScoreText}`, {
+        x: 48,
+        y: 57,
+        size: 10,
+        font: fontRegular,
+        color: footerColor,
       });
     }
 
@@ -1501,8 +1269,6 @@ export class VolunteersService {
         : 'N/A';
 
     const rawTemplate = await fs.readFile(htmlTemplatePath, 'utf8');
-    const supervisorSignatureDataUri =
-      await this._getSupervisorSignatureDataUri();
     const html = this._renderCertificateHtml(rawTemplate, {
       fullName,
       organization,
@@ -1511,7 +1277,6 @@ export class VolunteersService {
       issueDate,
       certificateId: input.certificateId,
       quizScore: quizScoreText,
-      supervisorSignatureDataUri,
     });
 
     let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
@@ -1558,7 +1323,6 @@ export class VolunteersService {
       issueDate: string;
       certificateId: string;
       quizScore: string;
-      supervisorSignatureDataUri: string;
     },
   ): string {
     const tokens: Record<string, string> = {
@@ -1569,7 +1333,6 @@ export class VolunteersService {
       '{{ISSUE_DATE}}': this._escapeHtml(vars.issueDate),
       '{{CERTIFICATE_ID}}': this._escapeHtml(vars.certificateId),
       '{{QUIZ_SCORE}}': this._escapeHtml(vars.quizScore),
-      '{{SUPERVISOR_SIGNATURE_DATA_URI}}': vars.supervisorSignatureDataUri,
     };
 
     let rendered = template;
@@ -1588,24 +1351,6 @@ export class VolunteersService {
       .replace(/'/g, '&#39;');
   }
 
-  private async _getSupervisorSignatureDataUri(): Promise<string> {
-    const signature = await this._readCertificateAsset(
-      DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH,
-    );
-    if (!signature) return '';
-    return `data:image/png;base64,${signature.toString('base64')}`;
-  }
-
-  private async _readCertificateAsset(
-    assetPath: string,
-  ): Promise<Buffer | null> {
-    try {
-      return await fs.readFile(assetPath);
-    } catch {
-      return null;
-    }
-  }
-
   private _drawCenteredText(
     page: PDFPage,
     text: string,
@@ -1618,25 +1363,6 @@ export class VolunteersService {
     const textWidth = font.widthOfTextAtSize(text, size);
     page.drawText(text, {
       x: Math.max(20, (pageWidth - textWidth) / 2),
-      y,
-      size,
-      font,
-      color,
-    });
-  }
-
-  private _drawCenteredTextAt(
-    page: PDFPage,
-    text: string,
-    centerX: number,
-    y: number,
-    size: number,
-    font: PDFFont,
-    color: RGB,
-  ): void {
-    const textWidth = font.widthOfTextAtSize(text, size);
-    page.drawText(text, {
-      x: centerX - textWidth / 2,
       y,
       size,
       font,

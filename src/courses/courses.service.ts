@@ -99,40 +99,24 @@ export class CoursesService {
   async myEnrollments(userId: string) {
     const list = await this.enrollmentModel
       .find({ userId: new Types.ObjectId(userId) })
-      .populate(
-        'courseId',
-        'title description slug isQualificationCourse startDate endDate courseType price location enrollmentLink certification targetAudience prerequisites',
-      )
+      .populate('courseId', 'title slug isQualificationCourse')
       .sort({ updatedAt: -1 })
       .lean()
       .exec();
     return list.map((e) => {
       const o = e as Record<string, unknown>;
       const course = o.courseId as Record<string, unknown> | null;
-      const courseId =
-        course?._id?.toString?.() ??
-        (o.courseId as { toString?: () => string } | undefined)?.toString?.();
       return {
         id: (o._id as { toString(): string })?.toString?.(),
-        courseId,
+        courseId: (o.courseId as Types.ObjectId)?.toString?.(),
         status: o.status,
         progressPercent: o.progressPercent,
         completedAt: o.completedAt,
         course: course
           ? {
               title: course.title,
-              description: course.description,
               slug: course.slug,
               isQualificationCourse: course.isQualificationCourse,
-              startDate: course.startDate,
-              endDate: course.endDate,
-              courseType: course.courseType,
-              price: course.price,
-              location: course.location,
-              enrollmentLink: course.enrollmentLink,
-              certification: course.certification,
-              targetAudience: course.targetAudience,
-              prerequisites: course.prerequisites,
             }
           : null,
       };
@@ -148,10 +132,7 @@ export class CoursesService {
     const list = await this.enrollmentModel
       .find(query)
       .populate('userId', 'fullName email')
-      .populate(
-        'courseId',
-        'title slug isQualificationCourse courseType certification',
-      )
+      .populate('courseId', 'title slug isQualificationCourse')
       .sort({ updatedAt: -1 })
       .lean()
       .exec();
@@ -159,13 +140,10 @@ export class CoursesService {
       const o = e as Record<string, unknown>;
       const course = o.courseId as Record<string, unknown> | null;
       const user = o.userId as Record<string, unknown> | null;
-      const courseId =
-        course?._id?.toString?.() ??
-        (o.courseId as { toString?: () => string } | undefined)?.toString?.();
       return {
         id: (o._id as { toString(): string })?.toString?.(),
         userId: (o.userId as Types.ObjectId)?.toString?.(),
-        courseId,
+        courseId: (o.courseId as Types.ObjectId)?.toString?.(),
         status: o.status,
         progressPercent: o.progressPercent,
         completedAt: o.completedAt,
@@ -175,8 +153,6 @@ export class CoursesService {
               title: course.title,
               slug: course.slug,
               isQualificationCourse: course.isQualificationCourse,
-              courseType: course.courseType,
-              certification: course.certification,
             }
           : null,
       };

@@ -17,6 +17,7 @@ import {
 import { CreateTaskReminderDto } from '../nutrition/dto/create-task-reminder.dto';
 import { RemindersService } from '../nutrition/reminders.service';
 import { ChildAccessService } from '../children/child-access.service';
+import { ConversationsService } from '../conversations/conversations.service';
 import { getChatbotConfirmSecret } from '../common/config/runtime-security.util';
 
 export interface ChatMessage {
@@ -56,19 +57,26 @@ export interface AssistantResponseMeta {
 }
 
 export interface PendingAssistantAction {
-  type: 'create_task_reminder';
+  type: 'create_task_reminder' | 'send_message_to_specialist';
   label: string;
   description: string;
   confirmToken: string;
-  preview: {
-    childId: string;
-    childName: string;
-    title: string;
-    description?: string;
-    time: string;
-    frequency: ReminderFrequency.ONCE;
-    reminderType: ReminderType.CUSTOM;
-  };
+  preview:
+    | {
+        childId: string;
+        childName: string;
+        title: string;
+        description?: string;
+        time: string;
+        frequency: ReminderFrequency.ONCE;
+        reminderType: ReminderType.CUSTOM;
+      }
+    | {
+        specialistName: string;
+        specialistId: string;
+        message: string;
+        conversationId?: string;
+      };
 }
 
 export interface ChatbotChatResponse {
@@ -106,13 +114,21 @@ interface PendingActionTokenPayload {
   userId: string;
   role: string;
   locale?: AssistantLocale;
-  action: {
-    type: PendingAssistantAction['type'];
-    childId: string;
-    title: string;
-    description?: string;
-    time: string;
-  };
+  action:
+    | {
+        type: 'create_task_reminder';
+        childId: string;
+        title: string;
+        description?: string;
+        time: string;
+      }
+    | {
+        type: 'send_message_to_specialist';
+        specialistId: string;
+        specialistName: string;
+        message: string;
+        conversationId?: string;
+      };
 }
 
 type ProviderMode = 'simple' | 'complex';
@@ -160,6 +176,7 @@ export class ChatbotService {
     @InjectModel(Child.name) private readonly childModel: Model<ChildDocument>,
     private readonly remindersService: RemindersService,
     private readonly childAccessService: ChildAccessService,
+    private readonly conversationsService: ConversationsService,
   ) {}
 
   private normalizeContext(
@@ -315,6 +332,12 @@ export class ChatbotService {
     switch (payload.action.type) {
       case 'create_task_reminder':
         return this.confirmCreateTaskReminder(
+          actor.id,
+          payload.action,
+          payload.locale,
+        );
+      case 'send_message_to_specialist':
+        return this.confirmSendMessageToSpecialist(
           actor.id,
           payload.action,
           payload.locale,
@@ -562,7 +585,9 @@ export class ChatbotService {
       decision.complexity,
       context.mode ?? 'message',
     );
-    const tools = decision.useTools ? [this.buildPrepareRoutineTaskTool()] : [];
+    const tools = decision.useTools
+      ? [this.buildPrepareRoutineTaskTool(), this.buildSendMessageToSpecialistTool()]
+      : [];
 
     try {
       const responseMessage = await this.tryProviders(
@@ -593,7 +618,7 @@ export class ChatbotService {
         );
         if (pendingAction) {
           return this.buildChatResponse(
-            this.buildPendingReminderReply(pendingAction, locale),
+            this.buildPendingActionReply(pendingAction, locale),
             this.buildMeta('smart_model', 'complex', 'family_action_prepared', {
               refreshed,
             }),
@@ -825,6 +850,14 @@ export class ChatbotService {
             .join('\n')
         : 'Aucun enfant enregistré.';
 
+    const currentChildId =
+      context.uiContext && typeof context.uiContext === 'object'
+        ? (context.uiContext as Record<string, unknown>).currentChildId
+        : undefined;
+    const currentChildHint = currentChildId
+      ? `Enfant actuellement affiché à l'écran : ID ${currentChildId}. Si l'utilisateur demande d'ajouter une tâche ou un rappel sans préciser l'enfant, utilise OBLIGATOIREMENT cet enfant. `
+      : '';
+
     return `Tu es Cogni, l'assistant IA de CogniCare pour les familles.
 Tu aides ${userName}.
 Contexte d'interface compact:
@@ -833,9 +866,10 @@ ${this.describeAssistantContext(context, locale)}
 Enfants suivis:
 ${childrenInfo}
 
-Tu peux répondre aux questions sur les routines, les rappels, les progrès, les suggestions thérapeutiques générales (PECS, TEACCH, activités sensorielles) et la planification quotidienne.
+${currentChildHint}Tu peux répondre aux questions sur les routines, les rappels, les progrès, les suggestions thérapeutiques générales (PECS, TEACCH, activités sensorielles) et la planification quotidienne.
 Si l'utilisateur demande clairement d'ajouter une tâche ou un rappel, prépare l'action avec l'outil "prepare_routine_task". N'exécute jamais l'action directement.
-Si l'utilisateur a un seul enfant, utilise automatiquement son ID. S'il y en a plusieurs et que l'enfant n'est pas clair, demande d'abord le prénom.
+Si l'utilisateur demande clairement d'envoyer un message à un spécialiste (psychologue, orthophoniste, ergothérapeute, médecin), prépare l'action avec l'outil "send_message_to_specialist". N'exécute jamais l'action directement.
+Si l'utilisateur a un seul enfant et qu'aucun enfant actuel n'est précisé, utilise automatiquement son ID. S'il y en a plusieurs et que l'enfant n'est pas clair, demande d'abord le prénom.
 Ne demande jamais l'ID directement à l'utilisateur.
 Sois chaleureux, concis (2 à 4 phrases sauf si demandé), bienveillant, et ne donne jamais de diagnostic médical.
 ${this.outputLanguageRule(locale)}`;
@@ -1781,6 +1815,32 @@ ${this.outputLanguageRule(locale)}`;
     };
   }
 
+  private buildSendMessageToSpecialistTool() {
+    return {
+      type: 'function',
+      function: {
+        name: 'send_message_to_specialist',
+        description:
+          "Prépare l'envoi d'un message à un spécialiste (psychologue, orthophoniste, ergothérapeute, médecin, etc.). Utilise cet outil quand l'utilisateur demande clairement d'envoyer un message ou une question à un spécialiste spécifique.",
+        parameters: {
+          type: 'object',
+          properties: {
+            specialistName: {
+              type: 'string',
+              description:
+                'Nom complet ou partiel du spécialiste destinataire.',
+            },
+            message: {
+              type: 'string',
+              description: 'Contenu du message à envoyer au spécialiste.',
+            },
+          },
+          required: ['specialistName', 'message'],
+        },
+      },
+    };
+  }
+
   private async preparePendingAction(
     userId: string,
     role: string,
@@ -1791,11 +1851,27 @@ ${this.outputLanguageRule(locale)}`;
     locale: AssistantLocale,
     currentChildId?: string,
   ): Promise<PendingAssistantAction | null> {
-    if (toolCall.function?.name !== 'prepare_routine_task') {
-      return null;
+    const toolName = toolCall.function?.name;
+    if (toolName === 'prepare_routine_task') {
+      return this.prepareRoutineTask(userId, role, toolCall, children, locale, currentChildId);
     }
+    if (toolName === 'send_message_to_specialist') {
+      return this.prepareSendMessageToSpecialist(userId, role, toolCall, locale);
+    }
+    return null;
+  }
 
-    const rawArgs = toolCall.function.arguments;
+  private async prepareRoutineTask(
+    userId: string,
+    role: string,
+    toolCall: {
+      function?: { name?: string; arguments?: string };
+    },
+    children: unknown[],
+    locale: AssistantLocale,
+    currentChildId?: string,
+  ): Promise<PendingAssistantAction | null> {
+    const rawArgs = toolCall.function?.arguments;
     if (!rawArgs) {
       return null;
     }
@@ -1894,6 +1970,122 @@ ${this.outputLanguageRule(locale)}`;
     };
   }
 
+  private async prepareSendMessageToSpecialist(
+    userId: string,
+    role: string,
+    toolCall: {
+      function?: { name?: string; arguments?: string };
+    },
+    locale: AssistantLocale,
+  ): Promise<PendingAssistantAction | null> {
+    const rawArgs = toolCall.function?.arguments;
+    if (!rawArgs) {
+      return null;
+    }
+
+    let args: {
+      specialistName?: string;
+      message?: string;
+    };
+    try {
+      args = JSON.parse(rawArgs) as {
+        specialistName?: string;
+        message?: string;
+      };
+    } catch {
+      throw new BadRequestException('Assistant action payload is invalid');
+    }
+
+    const specialistName = String(args.specialistName ?? '').trim();
+    const message = String(args.message ?? '').trim();
+
+    if (!specialistName || !message) {
+      throw new BadRequestException(
+        'Assistant action is missing required fields',
+      );
+    }
+
+    // Find specialist by name (fuzzy match on fullName)
+    const specialists = await this.userModel
+      .find({
+        role: {
+          $in: ['psychologist', 'speech_therapist', 'occupational_therapist', 'doctor', 'careProvider'],
+        },
+      })
+      .select('fullName')
+      .lean()
+      .exec();
+
+    const lowerName = specialistName.toLowerCase();
+    const matched = specialists.find((s) => {
+      const fullName = String((s as { fullName?: string }).fullName ?? '').toLowerCase();
+      return fullName.includes(lowerName) || lowerName.includes(fullName);
+    }) as { _id?: Types.ObjectId; fullName?: string } | undefined;
+
+    if (!matched || !matched._id) {
+      throw new BadRequestException(
+        this.translateLiteral(
+          locale,
+          `Aucun spécialiste trouvé pour "${specialistName}". Vérifiez le nom et réessayez.`,
+          `No specialist found for "${specialistName}". Please check the name and try again.`,
+          `لم يتم العثور على أخصائي باسم "${specialistName}". تحقق من الاسم وحاول مرة أخرى.`,
+        ),
+      );
+    }
+
+    const specialistId = matched._id.toString();
+
+    // Get or create conversation
+    const conversation = await this.conversationsService.getOrCreateConversation(
+      userId,
+      specialistId,
+      role,
+    );
+
+    const confirmToken = await this.jwtService.signAsync(
+      {
+        kind: 'chatbot-confirm',
+        userId,
+        role,
+        locale,
+        action: {
+          type: 'send_message_to_specialist',
+          specialistId,
+          specialistName: matched.fullName ?? specialistName,
+          message,
+          conversationId: conversation.id,
+        },
+      } satisfies PendingActionTokenPayload,
+      {
+        secret: this.chatbotConfirmSecret,
+        expiresIn: '10m',
+      },
+    );
+
+    return {
+      type: 'send_message_to_specialist',
+      label: this.translateLiteral(
+        locale,
+        'Envoyer le message',
+        'Send message',
+        'إرسال الرسالة',
+      ),
+      description: this.translateLiteral(
+        locale,
+        `Envoyer un message à ${matched.fullName ?? specialistName}.`,
+        `Send a message to ${matched.fullName ?? specialistName}.`,
+        `إرسال رسالة إلى ${matched.fullName ?? specialistName}.`,
+      ),
+      confirmToken,
+      preview: {
+        specialistId,
+        specialistName: matched.fullName ?? specialistName,
+        message,
+        conversationId: conversation.id,
+      },
+    };
+  }
+
   private normalizeTime(time: string | undefined): string {
     const value = String(time ?? '').trim();
     if (!/^\d{2}:\d{2}$/.test(value)) {
@@ -1920,25 +2112,37 @@ ${this.outputLanguageRule(locale)}`;
     action: PendingActionTokenPayload['action'],
     locale: AssistantLocale = 'fr',
   ): Promise<ChatbotConfirmResponse> {
+    if (action.type !== 'create_task_reminder') {
+      throw new BadRequestException('Unexpected action type');
+    }
+    this.logger.log(
+      `[confirmCreateTaskReminder] userId=${userId} childId=${action.childId} title="${action.title}" time=${action.time}`,
+    );
+
     const access = await this.childAccessService.assertCanAccessChild(
       action.childId,
       userId,
     );
 
-    const reminder = await this.remindersService.create(
-      {
-        childId: action.childId,
-        type: ReminderType.CUSTOM,
-        title: action.title,
-        description: action.description,
-        frequency: ReminderFrequency.ONCE,
-        times: [action.time],
-        icon: '📅',
-        color: '#A7DBE6',
-        soundEnabled: true,
-        vibrationEnabled: true,
-      } satisfies CreateTaskReminderDto,
-      userId,
+    const createDto = {
+      childId: action.childId,
+      type: ReminderType.CUSTOM,
+      title: action.title,
+      description: action.description,
+      frequency: ReminderFrequency.ONCE,
+      times: [action.time],
+      icon: '📅',
+      color: '#A7DBE6',
+      soundEnabled: true,
+      vibrationEnabled: true,
+    } satisfies CreateTaskReminderDto;
+
+    this.logger.log(`[confirmCreateTaskReminder] calling remindersService.create with dto=${JSON.stringify(createDto)}`);
+
+    const reminder = await this.remindersService.create(createDto, userId);
+
+    this.logger.log(
+      `[confirmCreateTaskReminder] reminder created result=${JSON.stringify(reminder)}`,
     );
 
     const childName =
@@ -1967,6 +2171,50 @@ ${this.outputLanguageRule(locale)}`;
           typeof reminder.id === 'string'
             ? reminder.id
             : undefined,
+        summary,
+      },
+    };
+  }
+
+  private async confirmSendMessageToSpecialist(
+    userId: string,
+    action: PendingActionTokenPayload['action'],
+    locale: AssistantLocale = 'fr',
+  ): Promise<ChatbotConfirmResponse> {
+    if (action.type !== 'send_message_to_specialist') {
+      throw new BadRequestException('Unexpected action type');
+    }
+    this.logger.log(
+      `[confirmSendMessageToSpecialist] userId=${userId} specialistId=${action.specialistId}`,
+    );
+
+    const result = await this.conversationsService.addMessage(
+      action.conversationId ?? '',
+      userId,
+      action.message,
+    );
+
+    this.logger.log(
+      `[confirmSendMessageToSpecialist] message sent id=${result.id}`,
+    );
+
+    const summary = this.translateLiteral(
+      locale,
+      `Message envoyé à ${action.specialistName}.`,
+      `Message sent to ${action.specialistName}.`,
+      `تم إرسال الرسالة إلى ${action.specialistName}.`,
+    );
+    return {
+      reply: this.translateLiteral(
+        locale,
+        `C'est fait. ${summary}`,
+        `Done. ${summary}`,
+        `تم التنفيذ. ${summary}`,
+      ),
+      execution: {
+        type: 'send_message_to_specialist',
+        status: 'confirmed',
+        entityId: result.id,
         summary,
       },
     };
@@ -2173,15 +2421,31 @@ ${this.outputLanguageRule(locale)}`;
     return trimmed;
   }
 
-  private buildPendingReminderReply(
+  private buildPendingActionReply(
     pendingAction: PendingAssistantAction,
     locale: AssistantLocale,
   ): string {
+    if (pendingAction.type === 'send_message_to_specialist') {
+      const preview = pendingAction.preview as {
+        specialistName: string;
+        message: string;
+      };
+      return this.translateLiteral(
+        locale,
+        `Je peux envoyer ce message à ${preview.specialistName}. Vérifiez le contenu puis confirmez pour l'envoyer.`,
+        `I can send this message to ${preview.specialistName}. Review the content and confirm to send it.`,
+        `يمكنني إرسال هذه الرسالة إلى ${preview.specialistName}. راجع المحتوى ثم أكد لإرسالها.`,
+      );
+    }
+    const preview = pendingAction.preview as {
+      childName: string;
+      time: string;
+    };
     return this.translateLiteral(
       locale,
-      `Je peux créer ce rappel pour ${pendingAction.preview.childName} à ${pendingAction.preview.time}. Vérifiez les détails puis confirmez si tout est correct.`,
-      `I can create this reminder for ${pendingAction.preview.childName} at ${pendingAction.preview.time}. Review the details and confirm if everything looks correct.`,
-      `يمكنني إنشاء هذا التذكير للطفل ${pendingAction.preview.childName} عند ${pendingAction.preview.time}. راجع التفاصيل ثم أكد إذا كان كل شيء صحيحًا.`,
+      `Je peux créer ce rappel pour ${preview.childName} à ${preview.time}. Vérifiez les détails puis confirmez si tout est correct.`,
+      `I can create this reminder for ${preview.childName} at ${preview.time}. Review the details and confirm if everything looks correct.`,
+      `يمكنني إنشاء هذا التذكير للطفل ${preview.childName} عند ${preview.time}. راجع التفاصيل ثم أكد إذا كان كل شيء صحيحًا.`,
     );
   }
 }
