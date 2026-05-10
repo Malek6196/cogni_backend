@@ -1060,6 +1060,24 @@ export class VolunteersService {
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const { width, height } = page.getSize();
 
+    // Try to embed a default supervisor signature image if available.
+    let supervisorSignature: any = null;
+    try {
+      const sigPath = DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH;
+      const sigExists = await fs.stat(sigPath).then(() => true).catch(() => false);
+      if (sigExists) {
+        const sigBuf = await fs.readFile(sigPath);
+        const ext = path.extname(sigPath).toLowerCase();
+        if (ext === '.png') {
+          supervisorSignature = await pdfDoc.embedPng(sigBuf);
+        } else if (ext === '.jpg' || ext === '.jpeg') {
+          supervisorSignature = await pdfDoc.embedJpg(sigBuf);
+        }
+      }
+    } catch (e) {
+      // ignore - signature is optional
+    }
+
     const fullName = this._safeCertificateText(input.fullName, 80);
     const organization = this._safeCertificateText(
       input.organizationName?.trim() || 'CogniCare Partner Organization',
@@ -1269,6 +1287,8 @@ export class VolunteersService {
         : 'N/A';
 
     const rawTemplate = await fs.readFile(htmlTemplatePath, 'utf8');
+    const supervisorSignatureDataUri =
+      await this._getSupervisorSignatureDataUri();
     const html = this._renderCertificateHtml(rawTemplate, {
       fullName,
       organization,
@@ -1277,6 +1297,7 @@ export class VolunteersService {
       issueDate,
       certificateId: input.certificateId,
       quizScore: quizScoreText,
+      supervisorSignatureDataUri,
     });
 
     let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
@@ -1323,6 +1344,7 @@ export class VolunteersService {
       issueDate: string;
       certificateId: string;
       quizScore: string;
+      supervisorSignatureDataUri: string;
     },
   ): string {
     const tokens: Record<string, string> = {
@@ -1333,6 +1355,7 @@ export class VolunteersService {
       '{{ISSUE_DATE}}': this._escapeHtml(vars.issueDate),
       '{{CERTIFICATE_ID}}': this._escapeHtml(vars.certificateId),
       '{{QUIZ_SCORE}}': this._escapeHtml(vars.quizScore),
+      '{{SUPERVISOR_SIGNATURE_DATA_URI}}': vars.supervisorSignatureDataUri,
     };
 
     let rendered = template;
@@ -1349,6 +1372,24 @@ export class VolunteersService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  private async _getSupervisorSignatureDataUri(): Promise<string> {
+    const signature = await this._readCertificateAsset(
+      DEFAULT_CERT_SUPERVISOR_SIGNATURE_PATH,
+    );
+    if (!signature) return '';
+    return `data:image/png;base64,${signature.toString('base64')}`;
+  }
+
+  private async _readCertificateAsset(
+    assetPath: string,
+  ): Promise<Buffer | null> {
+    try {
+      return await fs.readFile(assetPath);
+    } catch {
+      return null;
+    }
   }
 
   private _drawCenteredText(
