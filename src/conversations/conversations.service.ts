@@ -30,6 +30,7 @@ import { CallsGateway } from '../calls/calls.gateway';
 import { Logger } from '@nestjs/common';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { getMessagesEncryptionSecret } from '../common/config/runtime-security.util';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ConversationsService {
@@ -47,6 +48,7 @@ export class ConversationsService {
     private readonly configService: ConfigService,
     private readonly callsGateway: CallsGateway,
     private readonly cloudinary: CloudinaryService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private readonly logger = new Logger(ConversationsService.name);
@@ -933,6 +935,25 @@ export class ConversationsService {
         messageId: created._id.toString(),
         createdAt: (created as { createdAt?: Date }).createdAt?.toISOString?.(),
       });
+
+      // Create persistent notification for message
+      try {
+        await this.notificationsService.createForUser(recipientId, {
+          type: 'message_received',
+          title: `Nouveau message de ${senderName}`,
+          description: preview,
+          data: {
+            senderId: uid.toString(),
+            senderName,
+            conversationId: recipientConversationId,
+            messageId: created._id.toString(),
+          },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to create notification for message: ${error}`,
+        );
+      }
     }
 
     return {
