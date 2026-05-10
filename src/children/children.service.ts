@@ -405,22 +405,18 @@ export class ChildrenService {
   /**
    * Update child data. Only parent or org leader can update.
    */
-  async updateChild(
-    childId: string,
-    requesterId: string,
-    dto: UpdateChildDto,
-  ) {
+  async updateChild(childId: string, requesterId: string, dto: UpdateChildDto) {
     const child = await this.childModel.findById(childId).exec();
     if (!child) throw new NotFoundException('Child not found');
 
     const isParent = child.parentId?.toString() === requesterId;
     let isOrgLeader = false;
     if (!isParent && child.organizationId) {
-      const org = await this.organizationModel
+      const org = (await this.organizationModel
         .findById(child.organizationId)
         .select('leader')
         .lean()
-        .exec() as unknown as { leader?: Types.ObjectId } | null;
+        .exec()) as unknown as { leader?: Types.ObjectId } | null;
       isOrgLeader = org?.leader?.toString() === requesterId;
     }
     if (!isParent && !isOrgLeader) {
@@ -428,10 +424,12 @@ export class ChildrenService {
     }
 
     if (dto.fullName !== undefined) child.fullName = dto.fullName;
-    if (dto.dateOfBirth !== undefined) child.dateOfBirth = new Date(dto.dateOfBirth);
+    if (dto.dateOfBirth !== undefined)
+      child.dateOfBirth = new Date(dto.dateOfBirth);
     if (dto.gender !== undefined) child.gender = dto.gender;
     if (dto.diagnosis !== undefined) child.diagnosis = dto.diagnosis;
-    if (dto.medicalHistory !== undefined) child.medicalHistory = dto.medicalHistory;
+    if (dto.medicalHistory !== undefined)
+      child.medicalHistory = dto.medicalHistory;
     if (dto.allergies !== undefined) child.allergies = dto.allergies;
     if (dto.medications !== undefined) child.medications = dto.medications;
     if (dto.notes !== undefined) child.notes = dto.notes;
@@ -468,11 +466,11 @@ export class ChildrenService {
     const isParent = child.parentId?.toString() === requesterId;
     let isOrgLeader = false;
     if (!isParent && child.organizationId) {
-      const org = await this.organizationModel
+      const org = (await this.organizationModel
         .findById(child.organizationId)
         .select('leader')
         .lean()
-        .exec() as unknown as { leader?: Types.ObjectId } | null;
+        .exec()) as unknown as { leader?: Types.ObjectId } | null;
       isOrgLeader = org?.leader?.toString() === requesterId;
     }
     if (!isParent && !isOrgLeader) {
