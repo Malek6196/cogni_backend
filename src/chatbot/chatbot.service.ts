@@ -57,7 +57,7 @@ export interface AssistantResponseMeta {
 }
 
 export interface PendingAssistantAction {
-  type: 'create_task_reminder' | 'send_message_to_specialist';
+  type: 'create_task_reminder' | 'send_message_to_specialist' | 'delete_task_reminder';
   label: string;
   description: string;
   confirmToken: string;
@@ -76,6 +76,12 @@ export interface PendingAssistantAction {
         specialistId: string;
         message: string;
         conversationId?: string;
+      }
+    | {
+        reminderId: string;
+        childId: string;
+        childName: string;
+        title: string;
       };
 }
 
@@ -128,6 +134,12 @@ interface PendingActionTokenPayload {
         specialistName: string;
         message: string;
         conversationId?: string;
+      }
+    | {
+        type: 'delete_task_reminder';
+        reminderId: string;
+        childId: string;
+        title: string;
       };
 }
 
@@ -339,6 +351,12 @@ export class ChatbotService {
         );
       case 'send_message_to_specialist':
         return this.confirmSendMessageToSpecialist(
+          actor.id,
+          payload.action,
+          payload.locale,
+        );
+      case 'delete_task_reminder':
+        return this.confirmDeleteReminder(
           actor.id,
           payload.action,
           payload.locale,
@@ -587,7 +605,7 @@ export class ChatbotService {
       context.mode ?? 'message',
     );
     const tools = decision.useTools
-      ? [this.buildPrepareRoutineTaskTool(), this.buildSendMessageToSpecialistTool()]
+      ? [this.buildPrepareRoutineTaskTool(), this.buildSendMessageToSpecialistTool(), this.buildDeleteReminderTool()]
       : [];
 
     try {
@@ -770,7 +788,7 @@ export class ChatbotService {
       };
     }
 
-    if (this.isTaskCreationIntent(message) || this.isMessageToSpecialistIntent(message)) {
+    if (this.isTaskCreationIntent(message) || this.isMessageToSpecialistIntent(message) || this.isDeleteReminderIntent(message)) {
       return {
         strategy: 'smart_model',
         complexity: 'complex',
@@ -873,6 +891,7 @@ ${childrenInfo}
 ${currentChildHint}Tu peux répondre aux questions sur les routines, les rappels, les progrès, les suggestions thérapeutiques générales (PECS, TEACCH, activités sensorielles) et la planification quotidienne.
 Si l'utilisateur demande clairement d'ajouter une tâche ou un rappel, prépare l'action avec l'outil "prepare_routine_task". N'exécute jamais l'action directement.
 Si l'utilisateur demande clairement d'envoyer un message à un spécialiste (psychologue, orthophoniste, ergothérapeute, médecin), prépare l'action avec l'outil "send_message_to_specialist". N'exécute jamais l'action directement.
+Si l'utilisateur demande clairement de supprimer un rappel ou une tâche, prépare l'action avec l'outil "delete_task_reminder". N'exécute jamais l'action directement.
 Si l'utilisateur a un seul enfant et qu'aucun enfant actuel n'est précisé, utilise automatiquement son ID. S'il y en a plusieurs et que l'enfant n'est pas clair, demande d'abord le prénom.
 Ne demande jamais l'ID directement à l'utilisateur.
 Sois chaleureux, concis (2 à 4 phrases sauf si demandé), bienveillant, et ne donne jamais de diagnostic médical.
@@ -1561,6 +1580,13 @@ ${this.outputLanguageRule(locale)}`;
     );
   }
 
+  private isDeleteReminderIntent(message: string): boolean {
+    const normalized = this.normalizeQuestion(message);
+    return /(supprimer|retirer|annuler|enlever|delete|remove|cancel|حذف|إلغاء|إزالة)/.test(
+      normalized,
+    );
+  }
+
   private shouldUseSmartModel(
     message: string,
     history: ChatMessage[],
@@ -1852,6 +1878,33 @@ ${this.outputLanguageRule(locale)}`;
     };
   }
 
+  private buildDeleteReminderTool() {
+    return {
+      type: 'function',
+      function: {
+        name: 'delete_task_reminder',
+        description:
+          "Prépare la suppression d'un rappel ou d'une tâche existante. Utilise cet outil quand l'utilisateur demande clairement de supprimer, retirer ou annuler un rappel ou une tâche. L'utilisateur peut préciser l'enfant et le titre du rappel.",
+        parameters: {
+          type: 'object',
+          properties: {
+            childId: {
+              type: 'string',
+              description:
+                "ID de l'enfant concerné. Choisis uniquement un ID présent dans la liste fournie dans le prompt système.",
+            },
+            titleQuery: {
+              type: 'string',
+              description:
+                'Titre ou mot-clé du rappel à supprimer, tel que mentionné par l\'utilisateur.',
+            },
+          },
+          required: ['childId', 'titleQuery'],
+        },
+      },
+    };
+  }
+
   private async preparePendingAction(
     userId: string,
     role: string,
@@ -1868,6 +1921,9 @@ ${this.outputLanguageRule(locale)}`;
     }
     if (toolName === 'send_message_to_specialist') {
       return this.prepareSendMessageToSpecialist(userId, role, toolCall, locale);
+    }
+    if (toolName === 'delete_task_reminder') {
+      return this.prepareDeleteReminder(userId, role, toolCall, children, locale, currentChildId);
     }
     return null;
   }
@@ -2101,6 +2157,119 @@ ${this.outputLanguageRule(locale)}`;
     };
   }
 
+  private async prepareDeleteReminder(
+    userId: string,
+    role: string,
+    toolCall: {
+      function?: { name?: string; arguments?: string };
+    },
+    children: unknown[],
+    locale: AssistantLocale,
+    currentChildId?: string,
+  ): Promise<PendingAssistantAction | null> {
+    const rawArgs = toolCall.function?.arguments;
+    if (!rawArgs) {
+      this.logger.log('[prepareDeleteReminder] no rawArgs');
+      return null;
+    }
+
+    let args: {
+      childId?: string;
+      titleQuery?: string;
+    };
+    try {
+      args = JSON.parse(rawArgs) as {
+        childId?: string;
+        titleQuery?: string;
+      };
+    } catch {
+      throw new BadRequestException('Assistant action payload is invalid');
+    }
+
+    const childId = String(args.childId ?? '').trim() || currentChildId;
+    const titleQuery = String(args.titleQuery ?? '').trim();
+
+    this.logger.log(`[prepareDeleteReminder] childId=${childId} titleQuery="${titleQuery}"`);
+
+    if (!childId || !titleQuery) {
+      throw new BadRequestException(
+        'Assistant action is missing required fields',
+      );
+    }
+
+    const access = await this.childAccessService.assertCanAccessChild(
+      childId,
+      userId,
+    );
+
+    // Find active reminders for the child
+    const reminders = await this.remindersService.findByChildId(childId, userId);
+    const lowerQuery = titleQuery.toLowerCase();
+    const matched = reminders.find((r: any) =>
+      String(r.title ?? '').toLowerCase().includes(lowerQuery),
+    );
+
+    if (!matched) {
+      this.logger.log(`[prepareDeleteReminder] no reminder matched for "${titleQuery}"`);
+      throw new BadRequestException(
+        this.translateLiteral(
+          locale,
+          `Aucun rappel trouvé pour "${titleQuery}". Vérifiez le titre et réessayez.`,
+          `No reminder found for "${titleQuery}". Please check the title and try again.`,
+          `لم يتم العثور على تذكير بعنوان "${titleQuery}". تحقق من العنوان وحاول مرة أخرى.`,
+        ),
+      );
+    }
+
+    this.logger.log(`[prepareDeleteReminder] matched reminder=${matched.title} id=${matched.id}`);
+
+    const confirmToken = await this.jwtService.signAsync(
+      {
+        kind: 'chatbot-confirm',
+        userId,
+        role,
+        locale,
+        action: {
+          type: 'delete_task_reminder',
+          reminderId: matched.id,
+          childId,
+          title: matched.title,
+        },
+      } satisfies PendingActionTokenPayload,
+      {
+        secret: this.chatbotConfirmSecret,
+        expiresIn: '10m',
+      },
+    );
+
+    const childName =
+      access.child.fullName ??
+      this.translateLiteral(locale, 'votre enfant', 'your child', 'طفلك');
+
+    return {
+      type: 'delete_task_reminder',
+      label: this.translateLiteral(
+        locale,
+        'Supprimer le rappel',
+        'Delete reminder',
+        'حذف التذكير',
+      ),
+      description: this.translateLiteral(
+        locale,
+        `Supprimer le rappel "${matched.title}" pour ${childName}.`,
+        `Delete reminder "${matched.title}" for ${childName}.`,
+        `حذف التذكير "${matched.title}" للطفل ${childName}.`,
+      ),
+      confirmToken,
+      preview: {
+        reminderId: matched.id,
+        childId,
+        childName,
+        title: matched.title,
+      },
+    };
+  }
+
   private normalizeTime(time: string | undefined): string {
     const value = String(time ?? '').trim();
     if (!/^\d{2}:\d{2}$/.test(value)) {
@@ -2230,6 +2399,44 @@ ${this.outputLanguageRule(locale)}`;
         type: 'send_message_to_specialist',
         status: 'confirmed',
         entityId: result.id,
+        summary,
+      },
+    };
+  }
+
+  private async confirmDeleteReminder(
+    userId: string,
+    action: PendingActionTokenPayload['action'],
+    locale: AssistantLocale = 'fr',
+  ): Promise<ChatbotConfirmResponse> {
+    if (action.type !== 'delete_task_reminder') {
+      throw new BadRequestException('Unexpected action type');
+    }
+    this.logger.log(
+      `[confirmDeleteReminder] userId=${userId} reminderId=${action.reminderId} title="${action.title}"`,
+    );
+
+    await this.remindersService.delete(action.reminderId, userId);
+
+    this.logger.log(`[confirmDeleteReminder] reminder deleted`);
+
+    const summary = this.translateLiteral(
+      locale,
+      `Rappel "${action.title}" supprimé.`,
+      `Reminder "${action.title}" deleted.`,
+      `تم حذف التذكير "${action.title}".`,
+    );
+    return {
+      reply: this.translateLiteral(
+        locale,
+        `C'est fait. ${summary}`,
+        `Done. ${summary}`,
+        `تم التنفيذ. ${summary}`,
+      ),
+      execution: {
+        type: 'delete_task_reminder',
+        status: 'confirmed',
+        entityId: action.reminderId,
         summary,
       },
     };
@@ -2450,6 +2657,18 @@ ${this.outputLanguageRule(locale)}`;
         `Je peux envoyer ce message à ${preview.specialistName}. Vérifiez le contenu puis confirmez pour l'envoyer.`,
         `I can send this message to ${preview.specialistName}. Review the content and confirm to send it.`,
         `يمكنني إرسال هذه الرسالة إلى ${preview.specialistName}. راجع المحتوى ثم أكد لإرسالها.`,
+      );
+    }
+    if (pendingAction.type === 'delete_task_reminder') {
+      const preview = pendingAction.preview as {
+        childName: string;
+        title: string;
+      };
+      return this.translateLiteral(
+        locale,
+        `Je peux supprimer le rappel "${preview.title}" pour ${preview.childName}. Confirmez pour le supprimer.`,
+        `I can delete the reminder "${preview.title}" for ${preview.childName}. Confirm to delete it.`,
+        `يمكنني حذف التذكير "${preview.title}" للطفل ${preview.childName}. أكد لحذفه.`,
       );
     }
     const preview = pendingAction.preview as {
