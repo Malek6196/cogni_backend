@@ -26,6 +26,135 @@ import { VolunteersService } from '../volunteers/volunteers.service';
 
 const QUIZ_PASS_THRESHOLD_PERCENT = 80;
 
+type CanonicalTrainingCoursePatch = Pick<
+  CreateTrainingCourseDto,
+  | 'title'
+  | 'description'
+  | 'contentSections'
+  | 'topics'
+  | 'approved'
+  | 'order'
+  | 'quiz'
+>;
+
+const CANONICAL_TRAINING_COURSES: Record<number, CanonicalTrainingCoursePatch> =
+  {
+    1: {
+      title: "Connaissances générales sur l'autisme",
+      description:
+        "Vue d'ensemble de l'autisme, gestion au quotidien (comportement, routine, besoins sensoriels) et conseils nutritionnels.",
+      topics: ['autism', 'routines', 'sensory-needs', 'communication'],
+      approved: true,
+      order: 1,
+      contentSections: [
+        {
+          type: 'text',
+          title: "Comprendre l'autisme",
+          content:
+            "L'autisme influence principalement la communication, les interactions sociales, les comportements et la façon de traiter les informations sensorielles. Chaque enfant a un profil unique: l'objectif est d'observer ses forces, ses besoins et ses signaux.",
+          order: 0,
+        },
+        {
+          type: 'list',
+          title: 'Routines et prévisibilité',
+          content:
+            "Les routines aident l'enfant à anticiper ce qui arrive et à réduire l'anxiété.",
+          listItems: [
+            'Utiliser des consignes courtes et concrètes.',
+            'Préparer les transitions avec un repère visuel ou verbal.',
+            'Garder des horaires aussi prévisibles que possible.',
+            "Adapter l'environnement en cas de surcharge sensorielle.",
+          ],
+          order: 1,
+        },
+        {
+          type: 'text',
+          title: 'Communication et besoins sensoriels',
+          content:
+            'Certains enfants communiquent par mots, gestes, images, regards ou comportements. Les supports visuels, les pauses sensorielles et un environnement calme peuvent faciliter la participation.',
+          order: 2,
+        },
+        {
+          type: 'text',
+          title: 'Collaboration famille-professionnels',
+          content:
+            "Partager les observations entre la maison, l'école et les professionnels permet de garder des objectifs cohérents et de suivre les progrès dans le temps.",
+          order: 3,
+        },
+      ],
+    },
+    2: {
+      title: "PECS — Système de communication par échange d'images",
+      description:
+        'Introduction au PECS, pourquoi il fonctionne pour les enfants non verbaux ou peu verbaux, et étapes pratiques pour le mettre en place avec des supports visuels.',
+      topics: ['pecs', 'communication', 'visual-supports'],
+      approved: true,
+      order: 2,
+      contentSections: [
+        {
+          type: 'text',
+          title: 'PECS / Communication',
+          content:
+            "Le PECS aide l'enfant à communiquer un besoin ou un choix en échangeant une image. Il soutient l'initiative de communication, surtout quand le langage oral est limité ou en développement.",
+          order: 0,
+        },
+        {
+          type: 'list',
+          title: 'Mettre en place les supports',
+          listItems: [
+            "Commencer avec des objets très motivants pour l'enfant.",
+            'Utiliser des images simples, claires et faciles à manipuler.',
+            'Présenter peu de choix au début, puis augmenter progressivement.',
+            "Renforcer immédiatement l'échange par l'objet ou l'activité demandée.",
+          ],
+          order: 1,
+        },
+        {
+          type: 'text',
+          title: 'Généraliser au quotidien',
+          content:
+            "Le système devient utile quand il est utilisé dans plusieurs contextes: repas, jeu, sortie, école et soins. La cohérence entre adultes aide l'enfant à comprendre que son message fonctionne partout.",
+          order: 2,
+        },
+      ],
+    },
+    3: {
+      title: 'Méthode TEACCH',
+      description:
+        "Vue d'ensemble de l'enseignement structuré TEACCH : organisation visuelle, routines prévisibles et mise en œuvre à la maison et en milieu éducatif.",
+      topics: ['teacch', 'structured-teaching', 'visual-organization'],
+      approved: true,
+      order: 3,
+      contentSections: [
+        {
+          type: 'text',
+          title: 'Enseignement structuré',
+          content:
+            "La méthode TEACCH organise l'espace, le temps et les activités pour rendre les attentes plus compréhensibles. Elle s'appuie sur les forces visuelles de nombreux enfants autistes.",
+          order: 0,
+        },
+        {
+          type: 'list',
+          title: 'Organisation visuelle',
+          listItems: [
+            'Délimiter clairement les espaces: travail, pause, jeu, repas.',
+            'Afficher une séquence visuelle des activités.',
+            'Montrer ce qui est terminé et ce qui vient ensuite.',
+            "Adapter la quantité de tâches au niveau d'énergie de l'enfant.",
+          ],
+          order: 1,
+        },
+        {
+          type: 'text',
+          title: 'À la maison',
+          content:
+            "Un planning simple, des paniers d'activités et des routines répétées peuvent rendre le quotidien plus fluide. L'important est de commencer petit et d'ajuster selon la réaction de l'enfant.",
+          order: 2,
+        },
+      ],
+    },
+  };
+
 interface QuizQuestionRecord {
   question: string;
   options?: string[];
@@ -47,6 +176,8 @@ export interface QuizReviewItem {
 
 @Injectable()
 export class TrainingService {
+  private catalogRepairPromise?: Promise<void>;
+
   constructor(
     @InjectModel(TrainingCourse.name)
     private readonly courseModel: Model<TrainingCourse>,
@@ -60,14 +191,15 @@ export class TrainingService {
 
   /** List courses approved for app (caregivers) — only approved, ordered; quiz answers stripped */
   async listApproved() {
+    await this.ensureTrainingCatalogRepaired();
     const list = await this.courseModel
       .find({ approved: true })
       .sort({ order: 1, createdAt: 1 })
       .lean()
       .exec();
-    return list.map((c) =>
-      this.toCourseResponse(c as Record<string, unknown>, false, true),
-    );
+    return this.dedupeApprovedCourseRecords(
+      list as Record<string, unknown>[],
+    ).map((c) => this.toCourseResponse(c, false, true));
   }
 
   /** Admin: list all courses including unapproved */
@@ -84,6 +216,7 @@ export class TrainingService {
 
   /** Get one course by id; only approved for non-admin; strip quiz answers for app */
   async getById(courseId: string, admin = false) {
+    await this.ensureTrainingCatalogRepaired();
     const course = await this.courseModel.findById(courseId).lean().exec();
     if (!course) throw new NotFoundException('Training course not found');
     const c = course as Record<string, unknown>;
@@ -91,24 +224,223 @@ export class TrainingService {
     return this.toCourseResponse(c, admin, !admin);
   }
 
-  /** Seed the 3 generated courses (from scraped/official content) if collection is empty */
+  /** Seed or repair the 3 official caregiver courses used by the mobile app. */
   async seedCoursesIfEmpty(): Promise<void> {
+    const courses = this.readTrainingSeedCourses().map((course) =>
+      this.applyCanonicalTrainingPatch(course),
+    );
+    if (courses.length === 0) return;
+
     const count = await this.courseModel.countDocuments().exec();
-    if (count > 0) return;
+    if (count === 0) {
+      await this.courseModel.insertMany(courses);
+      return;
+    }
+
+    await this.repairCanonicalTrainingCourses(courses);
+    await this.repairRecoverableDemoCourses(courses);
+  }
+
+  private async ensureTrainingCatalogRepaired(): Promise<void> {
+    if (!this.catalogRepairPromise) {
+      this.catalogRepairPromise = this.seedCoursesIfEmpty().finally(() => {
+        this.catalogRepairPromise = undefined;
+      });
+    }
+    await this.catalogRepairPromise;
+  }
+
+  private readTrainingSeedCourses(): CreateTrainingCourseDto[] {
     const seedPath = path.join(
       process.cwd(),
       'data',
       'training-courses-seed.json',
     );
-    if (!fs.existsSync(seedPath)) return;
+    if (!fs.existsSync(seedPath)) return [];
     try {
       const raw = fs.readFileSync(seedPath, 'utf-8');
       const courses = JSON.parse(raw) as CreateTrainingCourseDto[];
-      if (!Array.isArray(courses) || courses.length === 0) return;
-      await this.courseModel.insertMany(courses);
+      if (!Array.isArray(courses)) return [];
+      return courses;
     } catch {
-      // ignore: seed is optional
+      // Ignore: seed is optional and app boot must not fail because of seed data.
+      return [];
     }
+  }
+
+  private applyCanonicalTrainingPatch(
+    course: CreateTrainingCourseDto,
+  ): CreateTrainingCourseDto {
+    const order = course.order ?? 0;
+    const canonical = CANONICAL_TRAINING_COURSES[order];
+    if (!canonical) return course;
+    return {
+      ...course,
+      ...canonical,
+      quiz: course.quiz ?? [],
+      sourceUrl: course.sourceUrl,
+    };
+  }
+
+  private async repairCanonicalTrainingCourses(
+    courses: CreateTrainingCourseDto[],
+  ): Promise<void> {
+    for (const course of courses) {
+      const order = course.order ?? 0;
+      if (!CANONICAL_TRAINING_COURSES[order]) continue;
+
+      const existing = (await this.courseModel
+        .findOne({
+          $or: [{ order }, { title: course.title }],
+        })
+        .lean()
+        .exec()) as (Record<string, unknown> & { _id: Types.ObjectId }) | null;
+
+      if (!existing) {
+        await this.courseModel.create(course);
+        continue;
+      }
+
+      if (!this.shouldRepairTrainingCourse(existing, course)) continue;
+
+      await this.courseModel.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            title: course.title,
+            description: course.description,
+            contentSections: course.contentSections ?? [],
+            sourceUrl: course.sourceUrl,
+            topics: course.topics ?? [],
+            quiz: course.quiz ?? [],
+            approved: true,
+            order,
+          },
+        },
+      );
+    }
+  }
+
+  private async repairRecoverableDemoCourses(
+    courses: CreateTrainingCourseDto[],
+  ): Promise<void> {
+    const canonicalByKind = new Map<string, CreateTrainingCourseDto>();
+    for (const course of courses) {
+      const key = this.trainingCourseKind(course);
+      if (key) canonicalByKind.set(key, course);
+    }
+
+    const existingCourses = (await this.courseModel
+      .find({ approved: true })
+      .lean()
+      .exec()) as Record<string, unknown>[];
+
+    for (const existing of existingCourses) {
+      const key = this.trainingCourseKind(existing);
+      if (!key) continue;
+      const canonical = canonicalByKind.get(key);
+      if (!canonical) continue;
+      if (!this.shouldRepairTrainingCourse(existing, canonical)) continue;
+
+      await this.courseModel.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            title: canonical.title,
+            description: canonical.description,
+            contentSections: canonical.contentSections ?? [],
+            sourceUrl: canonical.sourceUrl,
+            topics: canonical.topics ?? [],
+            quiz: canonical.quiz ?? [],
+            approved: true,
+            order: existing.order ?? canonical.order ?? 0,
+          },
+        },
+      );
+    }
+  }
+
+  private shouldRepairTrainingCourse(
+    existing: Record<string, unknown>,
+    canonical: CreateTrainingCourseDto,
+  ): boolean {
+    const title = this.stringField(existing.title).toLowerCase();
+    const description = this.stringField(existing.description).toLowerCase();
+    const contentSections = existing.contentSections;
+    const quiz = existing.quiz;
+    const serializedContent = JSON.stringify(
+      contentSections ?? '',
+    ).toLowerCase();
+    const hasNoContent =
+      !Array.isArray(contentSections) || contentSections.length === 0;
+    const hasNoQuiz = !Array.isArray(quiz) || quiz.length === 0;
+    const hasDemoContent =
+      title.includes('release-demo') ||
+      title.includes('support basics for families') ||
+      title.includes('certification pecs') ||
+      title.includes('approche teacch') ||
+      title.includes('gestion des comportements') ||
+      title.includes('communication alternative') ||
+      description.includes('release-demo') ||
+      this.stringField(existing.professionalComments)
+        .toLowerCase()
+        .includes('recovery seed') ||
+      this.stringField(existing.sourceUrl)
+        .toLowerCase()
+        .startsWith('demo://') ||
+      serializedContent.includes('run the scraper') ||
+      serializedContent.includes('internet explorer') ||
+      serializedContent.includes('unc chapel hill');
+
+    return (
+      existing.title !== canonical.title ||
+      hasNoContent ||
+      hasNoQuiz ||
+      hasDemoContent
+    );
+  }
+
+  private trainingCourseKind(
+    course:
+      | Pick<CreateTrainingCourseDto, 'title' | 'topics'>
+      | Record<string, unknown>,
+  ): string | null {
+    const title = this.stringField(course.title).toLowerCase();
+    const topics = Array.isArray(course.topics)
+      ? course.topics.map((topic) => String(topic).toLowerCase()).join(' ')
+      : '';
+    const text = `${title} ${topics}`;
+    if (text.includes('pecs')) return 'pecs';
+    if (text.includes('teacch')) return 'teacch';
+    if (
+      text.includes('autisme') ||
+      text.includes('autism') ||
+      text.includes('support basics for families') ||
+      text.includes('gestion des comportements') ||
+      text.includes('communication alternative') ||
+      text.includes('aac')
+    ) {
+      return 'autism';
+    }
+    return null;
+  }
+
+  private stringField(value: unknown): string {
+    return typeof value === 'string' ? value : '';
+  }
+
+  private dedupeApprovedCourseRecords(
+    courses: Record<string, unknown>[],
+  ): Record<string, unknown>[] {
+    const seen = new Set<string>();
+    const deduped: Record<string, unknown>[] = [];
+    for (const course of courses) {
+      const key = this.trainingCourseKind(course);
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      deduped.push(course);
+    }
+    return deduped;
   }
 
   /** Create course (admin or scraper) */
@@ -217,28 +549,19 @@ export class TrainingService {
   async getMyEnrollments(userId: string) {
     const list = await this.enrollmentModel
       .find({ userId: new Types.ObjectId(userId) })
-      .populate('courseId', 'title description order')
+      .populate('courseId', 'title description order topics contentSections')
       .sort({ createdAt: 1 })
       .lean()
       .exec();
-    const courseIds = list.map(
-      (e) => (e as Record<string, unknown>).courseId as Types.ObjectId,
-    );
-    const courses = await this.courseModel
-      .find({ _id: { $in: courseIds }, approved: true })
-      .lean()
-      .exec();
-    const courseMap = new Map(
-      courses.map((c) => [(c as { _id: Types.ObjectId })._id.toString(), c]),
-    );
     return list.map((e) => {
       const o = e as Record<string, unknown>;
-      const c = courseMap.get(
-        (o.courseId as Types.ObjectId)?.toString?.() ?? '',
-      ) as Record<string, unknown> | undefined;
+      const c = o.courseId as Record<string, unknown> | null;
+      const courseId =
+        c?._id?.toString?.() ??
+        (o.courseId as { toString?: () => string } | undefined)?.toString?.();
       return {
         id: (o._id as { toString(): string })?.toString?.(),
-        courseId: (o.courseId as Types.ObjectId)?.toString?.(),
+        courseId,
         progressPercent: o.progressPercent,
         contentCompleted: o.contentCompleted,
         quizPassed: o.quizPassed,
@@ -250,6 +573,8 @@ export class TrainingService {
               title: c.title,
               description: c.description,
               order: c.order,
+              topics: c.topics ?? [],
+              contentSections: c.contentSections ?? [],
             }
           : null,
       };
@@ -407,7 +732,10 @@ export class TrainingService {
       .sort({ order: 1 })
       .lean()
       .exec();
-    if (courses.length === 0) return false;
+    const visibleCourses = this.dedupeApprovedCourseRecords(
+      courses as Record<string, unknown>[],
+    );
+    if (visibleCourses.length === 0) return false;
     const enrollments = await this.enrollmentModel
       .find({ userId: new Types.ObjectId(userId) })
       .lean()
@@ -417,7 +745,7 @@ export class TrainingService {
         .filter((e) => e.progressPercent === 100 && e.quizPassed === true)
         .map((e) => (e.courseId as Types.ObjectId)?.toString?.()),
     );
-    for (const c of courses) {
+    for (const c of visibleCourses) {
       const id = (c as { _id: Types.ObjectId })._id.toString();
       if (!passedByCourse.has(id)) return false;
     }
@@ -436,12 +764,15 @@ export class TrainingService {
       .sort({ order: 1 })
       .lean()
       .exec();
+    const visibleCourses = this.dedupeApprovedCourseRecords(
+      courses as Record<string, unknown>[],
+    );
     const completedIds = new Set(
       (enrollments as Record<string, unknown>[])
         .filter((e) => e.progressPercent === 100 && e.quizPassed === true)
         .map((e) => (e.courseId as Types.ObjectId)?.toString?.()),
     );
-    for (const c of courses) {
+    for (const c of visibleCourses) {
       const id = (c as { _id: Types.ObjectId })._id.toString();
       if (!completedIds.has(id)) return id;
     }

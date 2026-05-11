@@ -259,10 +259,15 @@ Examples:
       const parsed = JSON.parse(cleaned);
       const cat = typeof parsed.category === 'number' ? parsed.category : 0;
       const validCat = cat >= 0 && cat <= 4 ? cat : 0;
-      const name = typeof parsed.categoryName === 'string' ? parsed.categoryName : 'Vêtements';
+      const name =
+        typeof parsed.categoryName === 'string'
+          ? parsed.categoryName
+          : 'Vêtements';
       return { category: validCat, categoryName: name };
     } catch (e) {
-      this.logger.warn(`Classification failed for "${text.slice(0, 50)}": ${(e as Error).message}`);
+      this.logger.warn(
+        `Classification failed for "${text.slice(0, 50)}": ${(e as Error).message}`,
+      );
       return { category: 0, categoryName: 'Vêtements' };
     }
   }

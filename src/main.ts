@@ -8,16 +8,36 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import {
+  getConfiguredCorsOrigins,
   isProductionEnvironment,
   isSwaggerEnabled,
 } from './common/config/runtime-security.util';
 
+type ExpressModule = {
+  json(options: { limit: string }): unknown;
+  urlencoded(options: { limit: string; extended: boolean }): unknown;
+  static(
+    root: string,
+    options: {
+      index: boolean;
+      setHeaders: (
+        res: { setHeader: (name: string, value: string) => void },
+        path: string,
+      ) => void;
+    },
+  ): unknown;
+};
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  
+
   // Increase body parser limit for image classification (10MB for base64 images)
-  const express = await import('express');
-  const ex = (express as any).default || express;
+  const expressModule = (await import('express')) as unknown as
+    | ExpressModule
+    | { default: ExpressModule };
+  const ex =
+    (expressModule as { default?: ExpressModule }).default ??
+    (expressModule as ExpressModule);
   app.use(ex.json({ limit: '10mb' }));
   app.use(ex.urlencoded({ limit: '10mb', extended: true }));
   const productionMode = isProductionEnvironment();
@@ -39,10 +59,20 @@ async function bootstrap() {
     ).set('trust proxy', 1);
   }
 
-  // Serve uploaded files (e.g. profile pictures, post images, voice .m4a) at /uploads
+  // Serve only intentionally public uploaded files at /uploads.
+  // Sensitive assets must go through authenticated API routes.
   const uploadsPath = join(process.cwd(), 'uploads');
+  const denySensitiveUpload = (
+    _req: unknown,
+    res: { status: (code: number) => { end: () => void } },
+  ) => res.status(404).end();
+  app.use('/uploads/chat', denySensitiveUpload);
+  app.use('/uploads/volunteers', denySensitiveUpload);
+  app.use('/uploads/proof-images', denySensitiveUpload);
+  app.use('/uploads/certificates', denySensitiveUpload);
   app.use(
     '/uploads',
+
     ex.static(uploadsPath, {
       index: false,
       setHeaders: (
@@ -79,16 +109,19 @@ async function bootstrap() {
 
   // Enable CORS for Flutter app and web
   const corsOriginEnv = process.env.CORS_ORIGIN;
-  const allowedOrigins = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:5173', // Web dashboard dev server (Vite)
-    'http://localhost:8080',
-    'http://localhost:54200', // Flutter web dev server
-    'http://localhost:54201',
-    'http://localhost:54202',
-    corsOriginEnv,
-  ].filter(Boolean);
+  const configuredCorsOrigins = getConfiguredCorsOrigins(corsOriginEnv);
+  const developmentOrigins = productionMode
+    ? []
+    : [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:5173', // Web dashboard dev server (Vite)
+        'http://localhost:8080',
+        'http://localhost:54200', // Flutter web dev server
+        'http://localhost:54201',
+        'http://localhost:54202',
+      ];
+  const allowedOrigins = [...developmentOrigins, ...configuredCorsOrigins];
 
   app.enableCors({
     origin: (
@@ -112,12 +145,8 @@ async function bootstrap() {
       }
 
       // Allow multiple origins from CORS_ORIGIN (comma-separated on Render)
-      if (corsOriginEnv) {
-        const list = corsOriginEnv
-          .split(',')
-          .map((o) => o.trim())
-          .filter(Boolean);
-        if (list.indexOf(origin) !== -1) {
+      if (configuredCorsOrigins.length > 0) {
+        if (configuredCorsOrigins.indexOf(origin) !== -1) {
           callback(null, true);
           return;
         }
@@ -133,7 +162,8 @@ async function bootstrap() {
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
-    allowedHeaders: 'Content-Type,Authorization,Accept',
+    allowedHeaders:
+      'Content-Type,Authorization,Accept,X-Correlation-Id,X-Cogni-Client',
   });
 
   // Global prefix for API versioning (exclude root path for welcome endpoint)

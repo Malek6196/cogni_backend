@@ -155,7 +155,8 @@ export class SupportTicketsService {
   async deleteTicket(ticketId: string, userId: string): Promise<void> {
     const ticket = await this.ticketModel.findById(ticketId).exec();
     if (!ticket) throw new NotFoundException('Ticket not found');
-    if (ticket.userId.toString() !== userId) throw new ForbiddenException('Access denied');
+    if (ticket.userId.toString() !== userId)
+      throw new ForbiddenException('Access denied');
     await this.ticketModel.findByIdAndDelete(ticketId).exec();
   }
 

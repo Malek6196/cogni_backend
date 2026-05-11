@@ -125,6 +125,22 @@ export class VolunteersController {
     });
   }
 
+  @Get('application/documents/file/:filename')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Download an application document with auth' })
+  async downloadApplicationDocument(
+    @Param('filename') filename: string,
+    @Request() req: { user: { id: string; role?: string } },
+    @Res() res: Response,
+  ) {
+    const asset = await this.volunteersService.getApplicationDocumentFile(
+      req.user,
+      filename,
+    );
+    res.type(asset.mimeType);
+    return res.sendFile(asset.path);
+  }
+
   @Delete('application/documents/:index')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({

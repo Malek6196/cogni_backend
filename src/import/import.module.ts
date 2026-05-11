@@ -14,9 +14,11 @@ import {
   Organization,
   OrganizationSchema,
 } from '../organization/schemas/organization.schema';
+import { OrganizationModule } from '../organization/organization.module';
 
 @Module({
   imports: [
+    OrganizationModule,
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Child.name, schema: ChildSchema },

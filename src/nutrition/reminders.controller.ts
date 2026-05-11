@@ -11,6 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -20,6 +21,7 @@ import {
   ApiQuery,
   ApiConsumes,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { RemindersService } from './reminders.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -106,6 +108,22 @@ export class RemindersController {
       req.user.id as string,
       proofImage,
     );
+  }
+
+  @Get('proof-images/:filename')
+  @Roles(...CHILD_ACCESS_ALLOWED_ROLES)
+  @ApiOperation({ summary: 'Download a proof image with child access checks' })
+  async downloadProofImage(
+    @Param('filename') filename: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const asset = await this.remindersService.getProofImageFile(
+      filename,
+      req.user.id as string,
+    );
+    res.type(asset.mimeType);
+    return res.sendFile(asset.path);
   }
 
   @Delete(':reminderId')

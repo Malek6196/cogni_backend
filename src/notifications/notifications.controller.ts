@@ -42,6 +42,7 @@ export class NotificationsController {
 
     // Sync routine reminders with persistent feed
     await this.notifications.syncRoutineReminders(req.user.id);
+    await this.notifications.syncProviderAppointmentNotifications(req.user.id);
 
     const list = await this.notifications.listForUser(req.user.id, limitNum);
     const unreadCount = await this.notifications.countUnread(req.user.id);

@@ -319,33 +319,47 @@ export class AuthController {
   @ApiOperation({
     summary: 'Social login with provider ID token',
     description:
-      'Authenticate with Google. The client sends an ID token and the backend verifies token signature and claims before creating or linking users.',
+      'Authenticate with Google. Existing accounts are linked and logged in immediately. New accounts without a role return a role-selection response before account creation.',
   })
   @ApiBody({ type: SocialLoginDto })
   @ApiResponse({
     status: HttpStatus.OK,
-    description: 'Social login successful',
+    description:
+      'Social login successful, or role selection required for a new Google account',
     schema: {
-      type: 'object',
-      properties: {
-        accessToken: {
-          type: 'string',
-          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-        },
-        refreshToken: {
-          type: 'string',
-          example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-        },
-        user: {
+      oneOf: [
+        {
           type: 'object',
           properties: {
-            id: { type: 'string', example: '60d5ecb74b24c72b8c8b4567' },
-            fullName: { type: 'string', example: 'John Doe' },
-            email: { type: 'string', example: 'john@example.com' },
-            role: { type: 'string', example: 'family' },
+            accessToken: {
+              type: 'string',
+              example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+            },
+            refreshToken: {
+              type: 'string',
+              example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+            },
+            user: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', example: '60d5ecb74b24c72b8c8b4567' },
+                fullName: { type: 'string', example: 'John Doe' },
+                email: { type: 'string', example: 'john@example.com' },
+                role: { type: 'string', example: 'family' },
+              },
+            },
           },
         },
-      },
+        {
+          type: 'object',
+          properties: {
+            requiresRoleSelection: { type: 'boolean', example: true },
+            provider: { type: 'string', example: 'google' },
+            email: { type: 'string', example: 'john@example.com' },
+            fullName: { type: 'string', example: 'John Doe' },
+          },
+        },
+      ],
     },
   })
   @ApiResponse({

@@ -215,9 +215,6 @@ export class ChildrenImportService {
       femme: 'female',
       feminin: 'female',
       انثى: 'female',
-      other: 'other',
-      autre: 'other',
-      اخر: 'other',
     };
     return aliases[cleaned] ?? null;
   }

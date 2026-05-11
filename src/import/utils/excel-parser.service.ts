@@ -14,6 +14,10 @@ export class ExcelParserService {
   async parseBuffer(
     buffer: Buffer,
   ): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
+    if (this.isLikelyCsv(buffer)) {
+      return this.parseCsvBuffer(buffer);
+    }
+
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
     const sheet = workbook.worksheets[0];
@@ -51,6 +55,93 @@ export class ExcelParserService {
     // de-dup and compact
     const uniqueHeaders = headers.filter(Boolean);
     return { headers: uniqueHeaders, rows };
+  }
+
+  private parseCsvBuffer(buffer: Buffer): {
+    headers: string[];
+    rows: Record<string, unknown>[];
+  } {
+    const records = this.parseCsvRecords(
+      buffer.toString('utf8').replace(/^\uFEFF/, ''),
+    );
+    if (records.length === 0) {
+      throw new Error('CSV file has no rows');
+    }
+
+    const headerRecord = records[0];
+    const headersByIndex: string[] = [];
+    headerRecord.forEach((value, index) => {
+      const header = this.normalise(value || `Column ${index + 1}`);
+      if (header) headersByIndex[index] = header;
+    });
+
+    const rows: Record<string, unknown>[] = [];
+    for (const record of records.slice(1)) {
+      const row: Record<string, unknown> = {};
+      record.forEach((value, index) => {
+        const header = headersByIndex[index];
+        if (header) row[header] = value.trim();
+      });
+      if (Object.values(row).some((value) => value !== null && value !== '')) {
+        rows.push(row);
+      }
+    }
+
+    return { headers: headersByIndex.filter(Boolean), rows };
+  }
+
+  private parseCsvRecords(text: string): string[][] {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let field = '';
+    let inQuotes = false;
+
+    const pushField = () => {
+      row.push(field);
+      field = '';
+    };
+    const pushRow = () => {
+      pushField();
+      if (row.some((value) => value.trim() !== '')) rows.push(row);
+      row = [];
+    };
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (inQuotes) {
+        if (char === '"' && text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else if (char === '"') {
+          inQuotes = false;
+        } else {
+          field += char;
+        }
+        continue;
+      }
+
+      if (char === '"' && field.length === 0) {
+        inQuotes = true;
+      } else if (char === ',') {
+        pushField();
+      } else if (char === '\r') {
+        if (text[i + 1] === '\n') i++;
+        pushRow();
+      } else if (char === '\n') {
+        pushRow();
+      } else {
+        field += char;
+      }
+    }
+
+    if (field.length > 0 || row.length > 0) pushRow();
+    return rows;
+  }
+
+  private isLikelyCsv(buffer: Buffer): boolean {
+    if (buffer.length === 0 || buffer.includes(0)) return false;
+    const sample = buffer.subarray(0, 4096).toString('utf8');
+    return sample.includes(',') && /[\r\n]/.test(sample);
   }
 
   /**

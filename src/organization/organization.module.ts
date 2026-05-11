@@ -42,6 +42,6 @@ import { OrgScopeGuard } from './guards/org-scope.guard';
   ],
   controllers: [OrganizationController],
   providers: [OrganizationService, OrgScopeGuard],
-  exports: [OrganizationService],
+  exports: [OrganizationService, OrgScopeGuard],
 })
 export class OrganizationModule {}

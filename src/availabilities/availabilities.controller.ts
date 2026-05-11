@@ -12,21 +12,39 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AvailabilitiesService } from './availabilities.service';
 
+const AVAILABILITY_PUBLISHER_ROLES = new Set([
+  'volunteer',
+  'careprovider',
+  'doctor',
+  'psychologist',
+  'speech_therapist',
+  'occupational_therapist',
+  'ergotherapist',
+  'healthcare',
+  'professional',
+]);
+
 @ApiTags('availabilities')
 @Controller('availabilities')
 export class AvailabilitiesController {
   constructor(private readonly availabilitiesService: AvailabilitiesService) {}
 
+  private canManageAvailability(role: string | undefined): boolean {
+    return role != null && AVAILABILITY_PUBLISHER_ROLES.has(role);
+  }
+
   @Post()
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Publish availability (volunteer)' })
+  @ApiOperation({
+    summary: 'Publish availability (volunteer, care provider, specialist)',
+  })
   async create(@Request() req: any, @Body() body: any) {
     const userId = req.user.id as string;
     const role = (req.user.role as string)?.toLowerCase?.();
-    if (role !== 'volunteer' && role !== 'careprovider') {
+    if (!this.canManageAvailability(role)) {
       throw new ForbiddenException(
-        'Only volunteers and care providers can publish availability',
+        'Only volunteers, care providers, and specialists can publish availability',
       );
     }
     const dates = Array.isArray(body.dates) ? body.dates : [];
@@ -45,13 +63,15 @@ export class AvailabilitiesController {
   @Get()
   @ApiBearerAuth('JWT-auth')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'List my availabilities (volunteer/careprovider)' })
+  @ApiOperation({
+    summary: 'List my availabilities (volunteer, care provider, specialist)',
+  })
   async listMine(@Request() req: any) {
     const userId = req.user.id as string;
     const role = (req.user.role as string)?.toLowerCase?.();
-    if (role !== 'volunteer' && role !== 'careprovider') {
+    if (!this.canManageAvailability(role)) {
       throw new ForbiddenException(
-        'Only volunteers and care providers can list their availabilities',
+        'Only volunteers, care providers, and specialists can list their availabilities',
       );
     }
     return this.availabilitiesService.listByVolunteerId(userId);

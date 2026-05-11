@@ -7,6 +7,7 @@ import { Child, ChildSchema } from '../children/schemas/child.schema';
 import { ChildrenModule } from '../children/children.module';
 import { NutritionModule } from '../nutrition/nutrition.module';
 import { AuthModule } from '../auth/auth.module';
+import { ConversationsModule } from '../conversations/conversations.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
     ChildrenModule,
     NutritionModule,
+    ConversationsModule,
   ],
   controllers: [ChatbotController],
   providers: [ChatbotService],
