@@ -341,15 +341,19 @@ export class AppointmentsService {
       cancelledAt: new Date(),
     });
 
-    // Release the slot
-    await this.slotsService.releaseSlot(appointment.slotId.toString());
+    // Release the slot (only if appointment has a slot - babysitting doesn't)
+    if (appointment.slotId) {
+      await this.slotsService.releaseSlot(appointment.slotId.toString());
+    }
 
-    // Real-time update
-    this.gateway.emitAppointmentCancelled(
-      appointment.userId.toString(),
-      appointment.providerId.toString(),
-      appointment.slotId.toString(),
-    );
+    // Real-time update (only if appointment has a slot)
+    if (appointment.slotId) {
+      this.gateway.emitAppointmentCancelled(
+        appointment.userId.toString(),
+        appointment.providerId.toString(),
+        appointment.slotId.toString(),
+      );
+    }
 
     // Notify user
     await this.notificationsService.createForUser(

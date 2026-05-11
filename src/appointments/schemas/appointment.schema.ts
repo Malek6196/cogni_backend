@@ -21,13 +21,13 @@ export class Appointment {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   providerId!: Types.ObjectId;
 
-  /** The booked consultation slot */
-  @Prop({ type: Types.ObjectId, ref: 'ConsultationSlot', required: true })
-  slotId!: Types.ObjectId;
+  /** The booked consultation slot (optional for babysitting) */
+  @Prop({ type: Types.ObjectId, ref: 'ConsultationSlot', required: false })
+  slotId?: Types.ObjectId;
 
   @Prop({
     required: true,
-    enum: ['doctor', 'volunteer', 'organization_staff'],
+    enum: ['doctor', 'volunteer', 'organization_staff', 'babysitting'],
     index: true,
   })
   consultationType!: string;
