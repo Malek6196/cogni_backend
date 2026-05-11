@@ -121,32 +121,6 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return createHash('sha256').update(userId).digest('hex').substring(0, 12);
   }
 
-  private hashLogValue(value: string | undefined): string {
-    if (!value) return 'unknown';
-    return createHash('sha256').update(value).digest('hex').substring(0, 12);
-  }
-
-  private async assertCanSignal(
-    client: SocketWithUserId,
-    targetUserId: string | undefined,
-    eventName: string,
-  ): Promise<boolean> {
-    if (!client.userId || !targetUserId) return false;
-    try {
-      await this.conversationsService.assertUsersCanCommunicate(
-        client.userId,
-        targetUserId,
-      );
-      return true;
-    } catch {
-      this.logger.warn(
-        `[CALL] ${eventName} denied from=${this.hashUserId(client.userId)} to=${this.hashLogValue(targetUserId)}`,
-      );
-      client.emit('call:error', { message: 'Call not allowed' });
-      return false;
-    }
-  }
-
   /**
    * Check connection rate limit for IP
    */
@@ -166,9 +140,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleConnection(client: SocketWithUserId) {
-    this.logger.log(
-      `[CALL] socket connected id=${this.hashLogValue(client.id)}`,
-    );
+    this.logger.log(`[CALL] Connexion socket client.id=${client.id}`);
 
     // Rate limit check
     const clientIp =
@@ -176,9 +148,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.handshake?.address ||
       'unknown';
     if (!this.checkConnectionRate(clientIp)) {
-      this.logger.warn(
-        `[CALL] Rate limit exceeded for ip=${this.hashLogValue(clientIp)}`,
-      );
+      this.logger.warn(`[CALL] Rate limit exceeded for IP=${clientIp}`);
       client.emit('error', {
         message: 'Rate limit exceeded. Please try again later.',
       });
@@ -189,7 +159,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const origin = client.handshake?.headers?.origin;
     if (!isAllowedSocketOrigin(origin)) {
       this.logger.warn(
-        `[CALL] Connexion refusée: origin not allowed for socket=${this.hashLogValue(client.id)}`,
+        `[CALL] Connexion refusée: origin not allowed for client.id=${client.id}`,
       );
       client.emit('error', { message: 'Origin not allowed' });
       client.disconnect(true);
@@ -229,7 +199,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleDisconnect(client: SocketWithUserId) {
     const userId = client.userId;
     this.logger.log(
-      `[CALL] Disconnect socket=${this.hashLogValue(client.id)} user=${userId ? this.hashUserId(userId) : 'unknown'}`,
+      `[CALL] Disconnect client.id=${client.id} user=${userId ? this.hashUserId(userId) : 'unknown'}`,
     );
     if (userId && userIdToSocket.has(userId)) {
       userIdToSocket.get(userId)!.delete(client.id);
@@ -263,7 +233,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('call:initiate')
-  async handleCallInitiate(
+  handleCallInitiate(
     client: SocketWithUserId,
     payload: {
       targetUserId: string;
@@ -274,17 +244,8 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const callerId = client.userId;
     if (!callerId) return;
-    if (
-      !(await this.assertCanSignal(
-        client,
-        payload.targetUserId,
-        'call:initiate',
-      ))
-    ) {
-      return;
-    }
     this.logger.log(
-      `[CALL] call:initiate from=${this.hashUserId(callerId)} to=${this.hashLogValue(payload.targetUserId)} channel=${this.hashLogValue(payload.channelId)}`,
+      `[CALL] call:initiate from=${this.hashUserId(callerId)} to=${this.hashUserId(payload.targetUserId)} channel=${payload.channelId}`,
     );
     const sockets = userIdToSocket.get(payload.targetUserId);
     if (sockets && sockets.size > 0) {
@@ -345,7 +306,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!sockets || sockets.size === 0) return;
 
     this.logger.log(
-      `[CALL] Livraison de ${activeCalls.length} appel(s) en attente à user=${this.hashUserId(userId)}`,
+      `[CALL] Livraison de ${activeCalls.length} appel(s) en attente à userId=${userId}`,
     );
 
     for (const pending of activeCalls) {
@@ -366,18 +327,13 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('call:accept')
-  async handleCallAccept(
+  handleCallAccept(
     client: SocketWithUserId,
     payload: { fromUserId: string; channelId: string },
   ) {
     if (!client.userId) return;
-    if (
-      !(await this.assertCanSignal(client, payload.fromUserId, 'call:accept'))
-    ) {
-      return;
-    }
     this.logger.log(
-      `[CALL] call:accept callee=${this.hashUserId(client.userId)} from=${this.hashLogValue(payload.fromUserId)} channel=${this.hashLogValue(payload.channelId)}`,
+      `[CALL] call:accept calleeId=${client.userId} fromUserId=${payload.fromUserId} channelId=${payload.channelId}`,
     );
     const sockets = userIdToSocket.get(payload.fromUserId);
     if (sockets) {
@@ -388,22 +344,14 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
     } else {
       this.logger.warn(
-        `[CALL] call:accept - caller=${this.hashLogValue(payload.fromUserId)} non trouvé`,
+        `[CALL] call:accept - caller fromUserId=${payload.fromUserId} non trouvé`,
       );
     }
   }
 
   @SubscribeMessage('call:reject')
-  async handleCallReject(
-    client: SocketWithUserId,
-    payload: { fromUserId: string },
-  ) {
+  handleCallReject(client: SocketWithUserId, payload: { fromUserId: string }) {
     if (!client.userId) return;
-    if (
-      !(await this.assertCanSignal(client, payload.fromUserId, 'call:reject'))
-    ) {
-      return;
-    }
     const sockets = userIdToSocket.get(payload.fromUserId);
     if (sockets) {
       for (const sid of sockets) {
@@ -414,16 +362,8 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('call:end')
-  async handleCallEnd(
-    client: SocketWithUserId,
-    payload: { targetUserId: string },
-  ) {
+  handleCallEnd(client: SocketWithUserId, payload: { targetUserId: string }) {
     if (!client.userId) return;
-    if (
-      !(await this.assertCanSignal(client, payload.targetUserId, 'call:end'))
-    ) {
-      return;
-    }
     const sockets = userIdToSocket.get(payload.targetUserId);
     if (sockets) {
       for (const sid of sockets) {
@@ -436,22 +376,13 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ─── WebRTC Signaling ──────────────────────────────────────────────
 
   @SubscribeMessage('webrtc:offer')
-  async handleWebRTCOffer(
+  handleWebRTCOffer(
     client: SocketWithUserId,
     payload: { targetUserId: string; sdp: string; type: string },
   ) {
     if (!client.userId) return;
-    if (
-      !(await this.assertCanSignal(
-        client,
-        payload.targetUserId,
-        'webrtc:offer',
-      ))
-    ) {
-      return;
-    }
     this.logger.log(
-      `[WEBRTC] offer from=${this.hashUserId(client.userId)} to=${this.hashLogValue(payload.targetUserId)}`,
+      `[WEBRTC] offer from=${client.userId} to=${payload.targetUserId}`,
     );
     const sockets = userIdToSocket.get(payload.targetUserId);
     if (sockets) {
@@ -468,22 +399,13 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('webrtc:answer')
-  async handleWebRTCAnswer(
+  handleWebRTCAnswer(
     client: SocketWithUserId,
     payload: { targetUserId: string; sdp: string; type: string },
   ) {
     if (!client.userId) return;
-    if (
-      !(await this.assertCanSignal(
-        client,
-        payload.targetUserId,
-        'webrtc:answer',
-      ))
-    ) {
-      return;
-    }
     this.logger.log(
-      `[WEBRTC] answer from=${this.hashUserId(client.userId)} to=${this.hashLogValue(payload.targetUserId)}`,
+      `[WEBRTC] answer from=${client.userId} to=${payload.targetUserId}`,
     );
     const sockets = userIdToSocket.get(payload.targetUserId);
     if (sockets) {
@@ -500,7 +422,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('webrtc:ice-candidate')
-  async handleWebRTCIceCandidate(
+  handleWebRTCIceCandidate(
     client: SocketWithUserId,
     payload: {
       targetUserId: string;
@@ -510,15 +432,6 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     },
   ) {
     if (!client.userId) return;
-    if (
-      !(await this.assertCanSignal(
-        client,
-        payload.targetUserId,
-        'webrtc:ice-candidate',
-      ))
-    ) {
-      return;
-    }
     const sockets = userIdToSocket.get(payload.targetUserId);
     if (sockets) {
       for (const sid of sockets) {
@@ -535,20 +448,11 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('call:audio_chunk')
-  async handleAudioChunk(
+  handleAudioChunk(
     client: SocketWithUserId,
     payload: { targetUserId: string; chunk: Buffer; channelId: string },
   ) {
     if (!client.userId) return;
-    if (
-      !(await this.assertCanSignal(
-        client,
-        payload.targetUserId,
-        'call:audio_chunk',
-      ))
-    ) {
-      return;
-    }
 
     let stream = this.transcriptionStreams.get(client.id);
     if (!stream) {
@@ -599,7 +503,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           },
           onError: (err) => {
             this.logger.error(
-              `Transcription stream error for socket=${this.hashLogValue(client.id)}: ${err.message}`,
+              `Transcription stream error for ${client.id}: ${err.message}`,
             );
             this.transcriptionStreams.delete(client.id);
           },
@@ -665,7 +569,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (s) s.emit('message:new', payload);
       }
       this.logger.log(
-        `[CALL] message:new envoyé à target=${this.hashLogValue(targetUserId)}`,
+        `[CALL] message:new envoyé à targetUserId=${targetUserId}`,
       );
     }
   }
@@ -682,7 +586,7 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         if (s) s.emit('message:deleted', payload);
       }
       this.logger.log(
-        `[CALL] message:deleted envoyé à target=${this.hashLogValue(targetUserId)} message=${this.hashLogValue(payload.messageId)}`,
+        `[CALL] message:deleted envoyé à targetUserId=${targetUserId} messageId=${payload.messageId}`,
       );
     }
   }

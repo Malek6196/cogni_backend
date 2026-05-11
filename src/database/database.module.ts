@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { getMongoDbUri } from '../common/config/runtime-security.util';
 
 @Module({
   imports: [
@@ -9,7 +8,7 @@ import { getMongoDbUri } from '../common/config/runtime-security.util';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        uri: getMongoDbUri(configService.get<string>('MONGODB_URI')),
+        uri: configService.get<string>('MONGODB_URI'),
         // Connection pool settings for production
         maxPoolSize: 50, // Maximum connections in pool
         minPoolSize: 10, // Keep warm connections ready

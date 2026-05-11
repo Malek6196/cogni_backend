@@ -14,11 +14,7 @@ import {
   ImportPreview,
   ConfirmedMapping,
 } from '../interfaces';
-import {
-  ExcelParserService,
-  STAFF_SYNONYMS,
-  validateImportPassword,
-} from '../utils';
+import { ExcelParserService, STAFF_SYNONYMS } from '../utils';
 
 const STAFF_ROLES = [
   'doctor',
@@ -35,7 +31,7 @@ const STAFF_FIELDS: FieldDefinition[] = [
   { field: 'email', required: true, label: 'Email' },
   { field: 'phone', required: false, label: 'Phone' },
   { field: 'role', required: true, label: 'Role' },
-  { field: 'password', required: true, label: 'Password' },
+  { field: 'password', required: false, label: 'Password' },
 ];
 
 @Injectable()
@@ -65,6 +61,7 @@ export class StaffImportService {
     buffer: Buffer,
     orgId: string,
     mappings: ConfirmedMapping[],
+    defaultPassword?: string,
   ): Promise<ImportSummary> {
     const { rows } = await this.parser.parseBuffer(buffer);
     const mapped = this.parser.applyMappings(rows, mappings);
@@ -136,13 +133,9 @@ export class StaffImportService {
 
       // ── Create user ──
       try {
-        const password = this.str(row['password']);
-        const passwordError = validateImportPassword(password, rowNum);
-        if (passwordError) {
-          summary.errors.push(passwordError);
-          continue;
-        }
-        const passwordHash = await bcrypt.hash(password!, 12);
+        const password =
+          this.str(row['password']) || defaultPassword || 'CogniCare2026!';
+        const passwordHash = await bcrypt.hash(password, 12);
 
         const user = await this.userModel.create({
           fullName,

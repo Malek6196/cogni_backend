@@ -30,7 +30,6 @@ import { CallsGateway } from '../calls/calls.gateway';
 import { Logger } from '@nestjs/common';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { getMessagesEncryptionSecret } from '../common/config/runtime-security.util';
-import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ConversationsService {
@@ -48,7 +47,6 @@ export class ConversationsService {
     private readonly configService: ConfigService,
     private readonly callsGateway: CallsGateway,
     private readonly cloudinary: CloudinaryService,
-    private readonly notificationsService: NotificationsService,
   ) {}
 
   private readonly logger = new Logger(ConversationsService.name);
@@ -163,139 +161,6 @@ export class ConversationsService {
     }
   }
 
-  async assertUsersCanCommunicate(
-    currentUserId: string,
-    otherUserId: string,
-  ): Promise<void> {
-    await this.assertDirectChatPolicy(currentUserId, otherUserId);
-  }
-
-  private hashLogId(value: string): string {
-    return crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
-  }
-
-  private chatAttachmentUrl(filename: string): string {
-    return `/api/v1/conversations/attachments/${encodeURIComponent(filename)}`;
-  }
-
-  private normalizeAttachmentFilename(filename: string): string {
-    const decoded = decodeURIComponent(filename);
-    const base = path.basename(decoded);
-    if (
-      base !== decoded ||
-      !/^(image|voice)-[0-9a-f-]+\.(jpg|png|webp|heic|m4a)$/i.test(base)
-    ) {
-      throw new BadRequestException('Invalid attachment name');
-    }
-    return base;
-  }
-
-  private attachmentMimeType(filename: string): string {
-    const ext = path.extname(filename).toLowerCase();
-    if (ext === '.png') return 'image/png';
-    if (ext === '.webp') return 'image/webp';
-    if (ext === '.heic') return 'image/heic';
-    if (ext === '.m4a') return 'audio/mp4';
-    return 'image/jpeg';
-  }
-
-  private async assertMessageAttachmentAccess(
-    userId: string,
-    filename: string,
-  ): Promise<'image' | 'voice'> {
-    const protectedUrl = this.chatAttachmentUrl(filename);
-    const legacyUrl = `/uploads/chat/${filename}`;
-    const message = await this.messageModel
-      .findOne({
-        attachmentUrl: { $in: [protectedUrl, legacyUrl] },
-        attachmentType: { $in: ['image', 'voice'] },
-      })
-      .select('threadId attachmentType')
-      .lean()
-      .exec();
-
-    if (!message) {
-      throw new NotFoundException('Attachment not found');
-    }
-
-    const uid = new Types.ObjectId(userId);
-    const threadId = (message as { threadId: Types.ObjectId }).threadId;
-    const conversation = await this.conversationModel
-      .findOne({
-        $or: [
-          { _id: threadId, user: uid },
-          { _id: threadId, otherUserId: uid },
-          { _id: threadId, participants: uid },
-          { threadId, user: uid },
-          { threadId, otherUserId: uid },
-          { threadId, participants: uid },
-        ],
-      })
-      .select('_id')
-      .lean()
-      .exec();
-
-    if (!conversation) {
-      throw new ForbiddenException('Not allowed to access attachment');
-    }
-
-    return (message as { attachmentType: 'image' | 'voice' }).attachmentType;
-  }
-
-  async getChatAttachment(
-    userId: string,
-    filenameParam: string,
-  ): Promise<
-    | { kind: 'buffer'; buffer: Buffer; mimeType: string }
-    | { kind: 'redirect'; url: string }
-  > {
-    const filename = this.normalizeAttachmentFilename(filenameParam);
-    const attachmentType = await this.assertMessageAttachmentAccess(
-      userId,
-      filename,
-    );
-
-    const privatePath = path.join(
-      process.cwd(),
-      'private_uploads',
-      'chat',
-      filename,
-    );
-    try {
-      const buffer = await fs.readFile(privatePath);
-      return {
-        kind: 'buffer',
-        buffer,
-        mimeType: this.attachmentMimeType(filename),
-      };
-    } catch {
-      // Fall back for legacy local files created before private storage.
-    }
-
-    const legacyPath = path.join(process.cwd(), 'uploads', 'chat', filename);
-    try {
-      const buffer = await fs.readFile(legacyPath);
-      return {
-        kind: 'buffer',
-        buffer,
-        mimeType: this.attachmentMimeType(filename),
-      };
-    } catch {
-      // Fall through to authenticated Cloudinary delivery when configured.
-    }
-
-    if (this.cloudinary.isConfigured()) {
-      const publicId = `cognicare/chat/${path.parse(filename).name}`;
-      const resourceType = attachmentType === 'voice' ? 'video' : 'image';
-      return {
-        kind: 'redirect',
-        url: this.cloudinary.createAuthenticatedUrl(publicId, resourceType),
-      };
-    }
-
-    throw new NotFoundException('Attachment file not found');
-  }
-
   private async assertGroupPairPolicy(
     firstUserId: Types.ObjectId,
     secondUserId: Types.ObjectId,
@@ -394,7 +259,7 @@ export class ConversationsService {
       .lean()
       .exec();
     this.logger.log(
-      `findInboxForUser query took ${Date.now() - start}ms for user=${this.hashLogId(userId)}`,
+      `findInboxForUser query took ${Date.now() - start}ms for userId: ${userId}`,
     );
 
     type Doc = {
@@ -725,7 +590,7 @@ export class ConversationsService {
     };
   }
 
-  /** Upload chat attachment (image or voice). Returns a protected URL path. */
+  /** Upload chat attachment (image or voice). Returns public URL path. */
   async uploadAttachment(
     userId: string,
     file: { buffer: Buffer; mimetype: string },
@@ -817,20 +682,24 @@ export class ConversationsService {
     /** URLs persistantes (Render, etc.) : le disque local est éphémère — sans cela les images disparaissent au redémarrage serveur. */
     if (this.cloudinary.isConfigured()) {
       const publicId = `${type}-${crypto.randomUUID()}`;
-      await this.cloudinary.uploadAuthenticatedBuffer(file.buffer, {
+      if (type === 'image') {
+        return this.cloudinary.uploadBuffer(file.buffer, {
+          folder: 'cognicare/chat',
+          publicId,
+        });
+      }
+      return this.cloudinary.uploadVideoResourceBuffer(file.buffer, {
         folder: 'cognicare/chat',
         publicId,
-        resourceType: type === 'voice' ? 'video' : 'image',
       });
-      return this.chatAttachmentUrl(`${publicId}.${ext}`);
     }
 
-    const dir = path.join(process.cwd(), 'private_uploads', 'chat');
+    const dir = path.join(process.cwd(), 'uploads', 'chat');
     await fs.mkdir(dir, { recursive: true });
-    const name = `${type}-${crypto.randomUUID()}.${ext}`;
+    const name = `${type}-${userId}-${crypto.randomUUID()}.${ext}`;
     const filePath = path.join(dir, name);
     await fs.writeFile(filePath, file.buffer);
-    return this.chatAttachmentUrl(name);
+    return `/uploads/chat/${name}`;
   }
 
   async addMessage(
@@ -935,25 +804,6 @@ export class ConversationsService {
         messageId: created._id.toString(),
         createdAt: (created as { createdAt?: Date }).createdAt?.toISOString?.(),
       });
-
-      // Create persistent notification for message
-      try {
-        await this.notificationsService.createForUser(recipientId, {
-          type: 'message_received',
-          title: `Nouveau message de ${senderName}`,
-          description: preview,
-          data: {
-            senderId: uid.toString(),
-            senderName,
-            conversationId: recipientConversationId,
-            messageId: created._id.toString(),
-          },
-        });
-      } catch (error) {
-        this.logger.warn(
-          `Failed to create notification for message: ${error}`,
-        );
-      }
     }
 
     return {

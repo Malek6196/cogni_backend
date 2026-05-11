@@ -9,6 +9,7 @@ import {
   Min,
   Max,
   IsNumber,
+  IsDateString,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -56,6 +57,42 @@ export class CreateAppointmentDto {
   @IsOptional()
   @IsEnum(['video', 'in_person', 'both'])
   mode?: 'video' | 'in_person' | 'both';
+}
+
+export class CreateBabysittingAppointmentDto {
+  @ApiProperty({ description: 'ID of the caregiver/volunteer' })
+  @IsMongoId()
+  caregiverId!: string;
+
+  @ApiProperty({ description: 'Date of the babysitting (YYYY-MM-DD)' })
+  @IsDateString()
+  date!: string;
+
+  @ApiProperty({ description: 'Start time (HH:mm)', example: '14:00' })
+  @IsString()
+  @IsNotEmpty()
+  startTime!: string;
+
+  @ApiProperty({ description: 'End time (HH:mm)', example: '18:00' })
+  @IsString()
+  @IsNotEmpty()
+  endTime!: string;
+
+  @ApiPropertyOptional({ description: 'Child ID if booking for a child' })
+  @IsOptional()
+  @IsMongoId()
+  childId?: string;
+
+  @ApiPropertyOptional({ description: 'Child name for display' })
+  @IsOptional()
+  @IsString()
+  childName?: string;
+
+  @ApiPropertyOptional({ description: 'Additional notes', maxLength: 1000 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
 }
 
 export class CancelAppointmentDto {

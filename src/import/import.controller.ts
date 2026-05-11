@@ -7,6 +7,7 @@ import {
   UploadedFile,
   Param,
   BadRequestException,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -16,7 +17,6 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Types } from 'mongoose';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 /** Minimal multer file type to avoid @types/multer dependency issues. */
@@ -28,9 +28,7 @@ interface UploadedFileType {
 }
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { OrgScopeGuard } from '../organization/guards/org-scope.guard';
 import { ConfirmImportDto } from './dto';
-import { buildExcelUploadOptions } from '../common/upload/multer-upload-options';
 import {
   StaffImportService,
   FamilyImportService,
@@ -50,7 +48,7 @@ import {
 @ApiTags('import')
 @ApiBearerAuth()
 @Controller('import')
-@UseGuards(JwtAuthGuard, RolesGuard, OrgScopeGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ImportController {
   constructor(
     private readonly staffImport: StaffImportService,
@@ -64,7 +62,7 @@ export class ImportController {
   // ──────────────────────────────────────────────
   @Post('preview/:orgId/:type')
   @Roles('admin', 'organization_leader')
-  @UseInterceptors(FileInterceptor('file', buildExcelUploadOptions()))
+  @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Upload Excel and get column mapping suggestions',
@@ -82,7 +80,6 @@ export class ImportController {
     @Param('type') type: string,
     @UploadedFile() file: UploadedFileType,
   ) {
-    this.validateOrgId(orgId);
     this.validateFile(file);
     const buffer = Buffer.from(file.buffer);
 
@@ -108,7 +105,7 @@ export class ImportController {
   // ──────────────────────────────────────────────
   @Post('execute/:orgId/:type')
   @Roles('admin', 'organization_leader')
-  @UseInterceptors(FileInterceptor('file', buildExcelUploadOptions()))
+  @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Execute import with confirmed column mappings',
@@ -118,21 +115,36 @@ export class ImportController {
     @Param('type') type: string,
     @UploadedFile() file: UploadedFileType,
     @Body() body: ConfirmImportDto,
+    @Query('defaultPassword') defaultPassword?: string,
   ) {
-    this.validateOrgId(orgId);
     this.validateFile(file);
     const buffer = Buffer.from(file.buffer);
     const { mappings } = body;
 
     switch (type) {
       case 'staff':
-        return this.staffImport.execute(buffer, orgId, mappings);
+        return this.staffImport.execute(
+          buffer,
+          orgId,
+          mappings,
+          defaultPassword,
+        );
       case 'families':
-        return this.familyImport.execute(buffer, orgId, mappings);
+        return this.familyImport.execute(
+          buffer,
+          orgId,
+          mappings,
+          defaultPassword,
+        );
       case 'children':
         return this.childrenImport.execute(buffer, orgId, mappings);
       case 'families_children':
-        return this.familyChildrenImport.execute(buffer, orgId, mappings);
+        return this.familyChildrenImport.execute(
+          buffer,
+          orgId,
+          mappings,
+          defaultPassword,
+        );
       default:
         throw new BadRequestException(
           `Invalid import type "${type}". ` +
@@ -190,35 +202,16 @@ export class ImportController {
   }
 
   // ──────────────────────────────────────────────
-  private validateOrgId(orgId: string): void {
-    if (!Types.ObjectId.isValid(orgId)) {
-      throw new BadRequestException('Invalid organization id');
-    }
-  }
-
   private validateFile(file: UploadedFileType): void {
     if (!file) throw new BadRequestException('No file uploaded');
 
-    const originalname = file.originalname?.toLowerCase() ?? '';
-    const mimetype = file.mimetype?.toLowerCase().trim() ?? '';
-    const isXlsx =
-      originalname.endsWith('.xlsx') &&
-      mimetype ===
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' &&
-      file.buffer?.subarray(0, 2).toString('utf8') === 'PK';
-    const isCsv =
-      originalname.endsWith('.csv') &&
-      [
-        'text/csv',
-        'text/plain',
-        'application/csv',
-        'application/vnd.ms-excel',
-      ].includes(mimetype) &&
-      !file.buffer?.includes(0);
-
-    if (!isXlsx && !isCsv) {
+    const allowed = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+    ];
+    if (!allowed.includes(file.mimetype)) {
       throw new BadRequestException(
-        'Invalid file type. Upload a .xlsx or .csv file',
+        'Invalid file type. Upload an Excel file (.xlsx / .xls)',
       );
     }
 

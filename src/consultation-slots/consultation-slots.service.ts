@@ -23,12 +23,6 @@ const PROVIDER_ROLES = [
   'organization_staff',
   'organization_leader',
   'careprovider',
-  'psychologist',
-  'speech_therapist',
-  'occupational_therapist',
-  'ergotherapist',
-  'healthcare',
-  'professional',
 ];
 
 @Injectable()
@@ -93,36 +87,20 @@ export class ConsultationSlotsService {
     this.validateTimeRange(dto.startTime, dto.endTime);
 
     const durationMin = dto.durationMinutes ?? 30;
-    const providerObjectId = new Types.ObjectId(providerId);
-    const generatedSlots = this.generateSlots(
-      dto.startTime,
-      dto.endTime,
-      durationMin,
-    );
+    const created: any[] = [];
 
-    if (generatedSlots.length === 0 || dto.dates.length === 0) {
-      return [];
-    }
+    for (const date of dto.dates) {
+      const slots = this.generateSlots(dto.startTime, dto.endTime, durationMin);
+      for (const slot of slots) {
+        const exists = await this.slotModel.findOne({
+          providerId: new Types.ObjectId(providerId),
+          date,
+          startTime: slot.startTime,
+        });
+        if (exists) continue;
 
-    const existingDocs = await this.slotModel
-      .find({
-        providerId: providerObjectId,
-        date: { $in: dto.dates },
-        startTime: { $in: generatedSlots.map((slot) => slot.startTime) },
-      })
-      .select('date startTime')
-      .lean()
-      .exec();
-
-    const existingKeys = new Set(
-      existingDocs.map((doc) => `${doc.date}|${doc.startTime}`),
-    );
-
-    const docsToInsert = dto.dates.flatMap((date) =>
-      generatedSlots
-        .filter((slot) => !existingKeys.has(`${date}|${slot.startTime}`))
-        .map((slot) => ({
-          providerId: providerObjectId,
+        const doc = await this.slotModel.create({
+          providerId: new Types.ObjectId(providerId),
           consultationType: dto.consultationType,
           date,
           startTime: slot.startTime,
@@ -130,18 +108,12 @@ export class ConsultationSlotsService {
           durationMinutes: durationMin,
           languages: dto.languages ?? [],
           mode: dto.mode ?? 'both',
-          status: 'available' as const,
-        })),
-    );
-
-    if (docsToInsert.length === 0) {
-      return [];
+          status: 'available',
+        });
+        created.push(this.formatSlot(doc.toObject()));
+      }
     }
-
-    const insertedDocs = await this.slotModel.insertMany(docsToInsert, {
-      ordered: false,
-    });
-    return insertedDocs.map((doc) => this.formatSlot(doc.toObject()));
+    return created;
   }
 
   /** Block a time range (creates blocked slots) */

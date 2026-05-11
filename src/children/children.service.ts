@@ -9,17 +9,11 @@ import { Model, Types } from 'mongoose';
 import { Child, ChildDocument } from './schemas/child.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import {
-  Appointment,
-  AppointmentDocument,
-} from '../appointments/schemas/appointment.schema';
-import {
   Organization,
   OrganizationDocument,
 } from '../organization/schemas/organization.schema';
 import { OrganizationService } from '../organization/organization.service';
-import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { AddChildDto } from './dto/add-child.dto';
-import { UpdateChildDto } from './dto/update-child.dto';
 import { CreateFamilyDto } from '../organization/dto/create-family.dto';
 
 interface UserLean {
@@ -43,25 +37,8 @@ interface ChildLean {
   allergies?: string;
   medications?: string;
   notes?: string;
-  profilePicture?: string;
   parentId?: Types.ObjectId;
 }
-
-interface ProviderPatientLean {
-  id: string;
-  fullName: string;
-  dateOfBirth: string;
-  parentId?: string;
-  parentFullName?: string;
-}
-
-const _specialistCareProviderTypes = new Set([
-  'speech_therapist',
-  'occupational_therapist',
-  'psychologist',
-  'doctor',
-  'ergotherapist',
-]);
 
 @Injectable()
 export class ChildrenService {
@@ -70,10 +47,7 @@ export class ChildrenService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Organization.name)
     private organizationModel: Model<OrganizationDocument>,
-    @InjectModel(Appointment.name)
-    private appointmentModel: Model<AppointmentDocument>,
     private organizationService: OrganizationService,
-    private cloudinary: CloudinaryService,
   ) {}
 
   /**
@@ -107,7 +81,7 @@ export class ChildrenService {
       .find({ parentId: new Types.ObjectId(familyId) })
       .sort({ createdAt: -1 })
       .lean()
-      .exec()) as unknown as ChildLean[];
+      .exec()) as ChildLean[];
     return children.map((c) => ({
       id: c._id?.toString() ?? '',
       fullName: c.fullName ?? '',
@@ -121,7 +95,6 @@ export class ChildrenService {
       allergies: c.allergies,
       medications: c.medications,
       notes: c.notes,
-      profilePicture: c.profilePicture,
       parentId: c.parentId?.toString(),
     }));
   }
@@ -166,13 +139,13 @@ export class ChildrenService {
         .exec();
       if (org) {
         org.childrenIds = org.childrenIds || [];
-        org.childrenIds.push(child._id as unknown as Types.ObjectId);
+        org.childrenIds.push(child._id);
         await org.save();
       }
     }
 
     return {
-      id: (child._id as unknown as Types.ObjectId).toString(),
+      id: child._id.toString(),
       fullName: child.fullName,
       dateOfBirth: child.dateOfBirth,
       gender: child.gender,
@@ -192,7 +165,7 @@ export class ChildrenService {
       .find({ specialistId: new Types.ObjectId(specialistId) })
       .sort({ createdAt: -1 })
       .lean()
-      .exec()) as unknown as ChildLean[];
+      .exec()) as ChildLean[];
 
     return children.map((c) => ({
       _id: c._id?.toString() ?? '',
@@ -223,7 +196,7 @@ export class ChildrenService {
     });
 
     return {
-      _id: (child._id as unknown as Types.ObjectId).toString(),
+      _id: child._id.toString(),
       fullName: child.fullName,
       dateOfBirth: child.dateOfBirth,
       gender: child.gender,
@@ -234,273 +207,5 @@ export class ChildrenService {
 
   async createPrivateFamily(specialistId: string, dto: CreateFamilyDto) {
     return this.organizationService.createFamilyMember(null, dto, specialistId);
-  }
-
-  /**
-   * Specialist patients (from real bookings).
-   * Source of truth: appointments where providerId = specialistId.
-   * Legacy appointments without childId are backfilled from the family's children
-   * when the mapping is unambiguous.
-   *
-   * Privacy: returns only minimal child identity + parent's display name (no PII beyond names).
-   */
-  async listPatientsForSpecialistFromAppointments(
-    specialistId: string,
-  ): Promise<ProviderPatientLean[]> {
-    const appts = await this.appointmentModel
-      .find({
-        providerId: new Types.ObjectId(specialistId),
-        status: { $ne: 'cancelled' },
-      })
-      .select('childId childName userId')
-      .lean()
-      .exec();
-
-    const appointmentRows = appts as unknown as Array<{
-      childId?: Types.ObjectId;
-      childName?: string;
-      userId?: Types.ObjectId;
-    }>;
-
-    const childIds = new Set<string>();
-    const legacyAppointments: Array<{
-      childName?: string;
-      userId: string;
-    }> = [];
-
-    for (const appointment of appointmentRows) {
-      const childId = appointment.childId?.toString();
-      if (childId) {
-        childIds.add(childId);
-        continue;
-      }
-      const userId = appointment.userId?.toString();
-      if (userId) {
-        legacyAppointments.push({
-          childName: appointment.childName,
-          userId,
-        });
-      }
-    }
-
-    if (legacyAppointments.length > 0) {
-      const parentIds = Array.from(
-        new Set(legacyAppointments.map((appointment) => appointment.userId)),
-      );
-      const legacyChildren = (await this.childModel
-        .find({
-          parentId: { $in: parentIds.map((id) => new Types.ObjectId(id)) },
-          deletedAt: { $exists: false },
-        })
-        .select('_id fullName parentId')
-        .lean()
-        .exec()) as unknown as ChildLean[];
-
-      const childrenByParentId = new Map<string, ChildLean[]>();
-      for (const child of legacyChildren) {
-        const parentId = child.parentId?.toString();
-        if (!parentId) continue;
-        const list = childrenByParentId.get(parentId) ?? [];
-        list.push(child);
-        childrenByParentId.set(parentId, list);
-      }
-
-      for (const appointment of legacyAppointments) {
-        const parentChildren = childrenByParentId.get(appointment.userId) ?? [];
-        if (parentChildren.length === 1) {
-          const onlyChildId = parentChildren[0]._id?.toString();
-          if (onlyChildId) childIds.add(onlyChildId);
-          continue;
-        }
-
-        const normalizedBookedName = appointment.childName
-          ?.trim()
-          .toLowerCase();
-        if (!normalizedBookedName) continue;
-        let matchingChildId: string | undefined;
-        for (const child of parentChildren) {
-          if (
-            (child.fullName ?? '').trim().toLowerCase() === normalizedBookedName
-          ) {
-            matchingChildId = child._id?.toString();
-            break;
-          }
-        }
-        if (matchingChildId) {
-          childIds.add(matchingChildId);
-        }
-      }
-    }
-
-    const uniqueChildIds = Array.from(childIds);
-    if (uniqueChildIds.length === 0) return [];
-
-    const children = (await this.childModel
-      .find({
-        _id: { $in: uniqueChildIds.map((id) => new Types.ObjectId(id)) },
-        deletedAt: { $exists: false },
-      })
-      .select('fullName dateOfBirth parentId')
-      .lean()
-      .exec()) as unknown as ChildLean[];
-
-    const parentIds = Array.from(
-      new Set(
-        children.map((c) => c.parentId?.toString()).filter(Boolean) as string[],
-      ),
-    );
-
-    const parents = await this.userModel
-      .find({ _id: { $in: parentIds.map((id) => new Types.ObjectId(id)) } })
-      .select('fullName')
-      .lean()
-      .exec();
-    const parentNameById = new Map<string, string>();
-    for (const p of parents as unknown as {
-      _id?: Types.ObjectId;
-      fullName?: string;
-    }[]) {
-      if (p._id) parentNameById.set(p._id.toString(), p.fullName ?? '');
-    }
-
-    return children
-      .map((c) => {
-        const parentId = c.parentId?.toString();
-        return {
-          id: c._id?.toString() ?? '',
-          fullName: c.fullName ?? '',
-          dateOfBirth:
-            c.dateOfBirth instanceof Date
-              ? c.dateOfBirth.toISOString().slice(0, 10)
-              : (c.dateOfBirth ?? ''),
-          parentId,
-          parentFullName: parentId ? parentNameById.get(parentId) : undefined,
-        };
-      })
-      .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }
-
-  async assertCareProviderIsSpecialist(userId: string): Promise<void> {
-    const user = await this.userModel
-      .findById(userId)
-      .select('role careProviderType')
-      .lean()
-      .exec();
-    const lean = user as unknown as {
-      role?: string;
-      careProviderType?: string;
-    };
-    if (!lean) throw new NotFoundException('User not found');
-    if (lean.role !== 'careProvider') {
-      throw new ForbiddenException('Not a care provider account');
-    }
-    if (
-      !lean.careProviderType ||
-      !_specialistCareProviderTypes.has(lean.careProviderType)
-    ) {
-      throw new ForbiddenException('Not authorized');
-    }
-  }
-
-  /**
-   * Update child data. Only parent or org leader can update.
-   */
-  async updateChild(childId: string, requesterId: string, dto: UpdateChildDto) {
-    const child = await this.childModel.findById(childId).exec();
-    if (!child) throw new NotFoundException('Child not found');
-
-    const isParent = child.parentId?.toString() === requesterId;
-    let isOrgLeader = false;
-    if (!isParent && child.organizationId) {
-      const org = (await this.organizationModel
-        .findById(child.organizationId)
-        .select('leader')
-        .lean()
-        .exec()) as unknown as { leader?: Types.ObjectId } | null;
-      isOrgLeader = org?.leader?.toString() === requesterId;
-    }
-    if (!isParent && !isOrgLeader) {
-      throw new ForbiddenException('Not authorized to update this child');
-    }
-
-    if (dto.fullName !== undefined) child.fullName = dto.fullName;
-    if (dto.dateOfBirth !== undefined)
-      child.dateOfBirth = new Date(dto.dateOfBirth);
-    if (dto.gender !== undefined) child.gender = dto.gender;
-    if (dto.diagnosis !== undefined) child.diagnosis = dto.diagnosis;
-    if (dto.medicalHistory !== undefined)
-      child.medicalHistory = dto.medicalHistory;
-    if (dto.allergies !== undefined) child.allergies = dto.allergies;
-    if (dto.medications !== undefined) child.medications = dto.medications;
-    if (dto.notes !== undefined) child.notes = dto.notes;
-
-    await child.save();
-
-    return {
-      id: (child._id as { toString(): string }).toString(),
-      fullName: child.fullName,
-      dateOfBirth: child.dateOfBirth,
-      gender: child.gender,
-      diagnosis: child.diagnosis,
-      medicalHistory: child.medicalHistory,
-      allergies: child.allergies,
-      medications: child.medications,
-      notes: child.notes,
-      profilePicture: child.profilePicture,
-    };
-  }
-
-  /**
-   * Upload child profile picture to Cloudinary (or local fs fallback).
-   * Only parent or org leader can update.
-   */
-  async uploadChildProfilePicture(
-    childId: string,
-    requesterId: string,
-    file: { buffer: Buffer; mimetype: string },
-  ): Promise<{ id: string; profilePicture?: string }> {
-    const child = await this.childModel.findById(childId).exec();
-    if (!child) throw new NotFoundException('Child not found');
-
-    // Authorization
-    const isParent = child.parentId?.toString() === requesterId;
-    let isOrgLeader = false;
-    if (!isParent && child.organizationId) {
-      const org = (await this.organizationModel
-        .findById(child.organizationId)
-        .select('leader')
-        .lean()
-        .exec()) as unknown as { leader?: Types.ObjectId } | null;
-      isOrgLeader = org?.leader?.toString() === requesterId;
-    }
-    if (!isParent && !isOrgLeader) {
-      throw new ForbiddenException('Not authorized to update this child');
-    }
-
-    let profilePicUrl: string;
-    if (this.cloudinary.isConfigured()) {
-      profilePicUrl = await this.cloudinary.uploadBuffer(file.buffer, {
-        folder: 'cognicare/children',
-        publicId: `child_${childId}`,
-      });
-    } else {
-      const path = await import('path');
-      const fs = await import('fs/promises');
-      const uploadsDir = path.join(process.cwd(), 'uploads', 'children');
-      await fs.mkdir(uploadsDir, { recursive: true });
-      const ext = file.mimetype === 'image/png' ? 'png' : 'jpg';
-      const filename = `child_${childId}.${ext}`;
-      const filePath = path.join(uploadsDir, filename);
-      await fs.writeFile(filePath, file.buffer);
-      profilePicUrl = `/uploads/children/${filename}`;
-    }
-
-    child.profilePicture = profilePicUrl;
-    await child.save();
-
-    return {
-      id: (child._id as { toString(): string }).toString(),
-      profilePicture: child.profilePicture,
-    };
   }
 }

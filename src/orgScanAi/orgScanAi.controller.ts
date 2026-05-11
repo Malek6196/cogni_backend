@@ -11,12 +11,10 @@ import {
   Request,
   BadRequestException,
   NotFoundException,
-  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { createHash } from 'crypto';
 import {
   ApiTags,
   ApiOperation,
@@ -48,8 +46,6 @@ import {
 @ApiTags('Organization Document Scanner AI')
 @Controller('org-scan-ai')
 export class OrgScanAiController {
-  private readonly logger = new Logger(OrgScanAiController.name);
-
   constructor(
     private readonly orgScanAiService: OrgScanAiService,
     private readonly fraudAnalysisService: FraudAnalysisService,
@@ -60,10 +56,6 @@ export class OrgScanAiController {
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
   ) {}
-
-  private hashLogValue(value: string): string {
-    return createHash('sha256').update(value).digest('hex').slice(0, 12);
-  }
 
   @Post('analyze')
   @UseGuards(JwtAuthGuard)
@@ -187,11 +179,11 @@ export class OrgScanAiController {
       // Delete the organization leader's user account
       try {
         await this.userModel.findByIdAndDelete(pendingOrg.requestedBy);
-        this.logger.log(
-          `[REJECT] Deleted user account for rejected organization user=${this.hashLogValue(String(pendingOrg.requestedBy))}`,
+        console.log(
+          `[REJECT] Deleted user account for rejected organization: ${String(pendingOrg.requestedBy)}`,
         );
       } catch (error) {
-        this.logger.error(
+        console.error(
           `[REJECT] Failed to delete user account: ${error instanceof Error ? error.message : 'Unknown error'}`,
         );
         // Don't throw - analysis is already rejected, just log the error
@@ -395,9 +387,7 @@ export class OrgScanAiController {
     }
 
     // Download PDF from Cloudinary
-    this.logger.log(
-      `[RESCAN] Downloading certificate for pendingOrg=${this.hashLogValue(pendingOrgId)}`,
-    );
+    console.log('[RESCAN] Certificate URL:', pendingOrg.certificateUrl);
     let pdfBuffer: Buffer;
     try {
       const response = await axios.get<ArrayBuffer>(pendingOrg.certificateUrl, {
@@ -407,14 +397,16 @@ export class OrgScanAiController {
         },
       });
       pdfBuffer = Buffer.from(response.data);
-      this.logger.log(
-        `[RESCAN] Downloaded PDF buffer size=${pdfBuffer.length}`,
+      console.log(
+        '[RESCAN] Downloaded PDF buffer size:',
+        pdfBuffer.length,
+        'bytes',
       );
 
       // Validate PDF header (should start with %PDF-)
       const pdfHeader = pdfBuffer.toString('utf8', 0, 5);
       if (!pdfHeader.startsWith('%PDF-')) {
-        this.logger.error('[RESCAN] Invalid PDF header');
+        console.error('[RESCAN] Invalid PDF header:', pdfHeader);
 
         // Detect actual file type from magic bytes
         let detectedType = 'unknown';
@@ -439,13 +431,11 @@ export class OrgScanAiController {
             `or contact support to manually upload a valid certificate.`,
         );
       }
-      this.logger.log('[RESCAN] Valid PDF header detected');
+      console.log('[RESCAN] Valid PDF header detected:', pdfHeader);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(
-        `[RESCAN] Failed to download certificate: ${errorMessage}`,
-      );
+      console.error('[RESCAN] Failed to download certificate:', errorMessage);
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -455,8 +445,9 @@ export class OrgScanAiController {
     }
 
     // Perform fraud analysis
-    this.logger.log(
-      `[RESCAN] Starting fraud analysis for pendingOrg=${this.hashLogValue(pendingOrgId)}`,
+    console.log(
+      '[RESCAN] Starting fraud analysis for pending org:',
+      pendingOrgId,
     );
     const result = await this.fraudAnalysisService.analyzeOrganization({
       organizationId: pendingOrgId,
@@ -551,9 +542,7 @@ export class OrgScanAiController {
       throw new NotFoundException('Pending organization not found');
     }
 
-    this.logger.log(
-      `[REUPLOAD] Uploading new certificate for pendingOrg=${this.hashLogValue(pendingOrgId)}`,
-    );
+    console.log('[REUPLOAD] Uploading new certificate for org:', pendingOrgId);
 
     // Upload new certificate to Cloudinary (replace old one)
     const certificateUrl = await this.cloudinaryService.uploadRawBuffer(
@@ -565,7 +554,7 @@ export class OrgScanAiController {
       },
     );
 
-    this.logger.log('[REUPLOAD] New certificate uploaded');
+    console.log('[REUPLOAD] New certificate uploaded:', certificateUrl);
 
     // Update pending organization with new certificate URL
     pendingOrg.certificateUrl = certificateUrl;
@@ -580,7 +569,7 @@ export class OrgScanAiController {
       originalPdfPath: certificateUrl,
     });
 
-    this.logger.log(`[REUPLOAD] Fraud analysis completed risk=${result.level}`);
+    console.log('[REUPLOAD] Fraud analysis completed. Risk:', result.level);
 
     return {
       organizationId: result.organizationId,

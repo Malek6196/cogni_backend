@@ -151,20 +151,4 @@ export class ReelsController {
     }
     return this.reelsService.trackComment(reelId, req.user.id);
   }
-
-  @Get(':id/my-engagement')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
-  @ApiOperation({
-    summary: 'Get current user engagement state for a reel (liked, saved)',
-  })
-  async myEngagement(
-    @Param('id') reelId: string,
-    @Request() req: { user: { id: string } },
-  ) {
-    if (!Types.ObjectId.isValid(reelId)) {
-      throw new BadRequestException('Invalid reel ID');
-    }
-    return this.reelsService.getUserEngagements(reelId, req.user.id);
-  }
 }

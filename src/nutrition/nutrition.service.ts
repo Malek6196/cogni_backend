@@ -60,7 +60,7 @@ export class NutritionService {
    * Update nutrition plan
    */
   async update(planId: string, dto: UpdateNutritionPlanDto, userId: string) {
-    const plan = await this.nutritionPlanModel.findById(planId).exec();
+    const plan = await this.nutritionPlanModel.findById(planId);
     if (!plan) {
       throw new NotFoundException('Nutrition plan not found');
     }
@@ -80,7 +80,7 @@ export class NutritionService {
    * Delete (deactivate) nutrition plan
    */
   async delete(planId: string, userId: string) {
-    const plan = await this.nutritionPlanModel.findById(planId).exec();
+    const plan = await this.nutritionPlanModel.findById(planId);
     if (!plan) {
       throw new NotFoundException('Nutrition plan not found');
     }

@@ -14,7 +14,6 @@ import {
 import { ConversationsService } from './conversations.service';
 import { ConversationsController } from './conversations.controller';
 import { CallsModule } from '../calls/calls.module';
-import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -26,7 +25,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: FollowRequest.name, schema: FollowRequestSchema },
     ]),
     forwardRef(() => CallsModule),
-    NotificationsModule,
   ],
   controllers: [ConversationsController],
   providers: [ConversationsService],

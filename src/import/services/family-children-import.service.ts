@@ -15,18 +15,14 @@ import {
   ImportPreview,
   ConfirmedMapping,
 } from '../interfaces';
-import {
-  ExcelParserService,
-  FAMILY_CHILDREN_SYNONYMS,
-  validateImportPassword,
-} from '../utils';
+import { ExcelParserService, FAMILY_CHILDREN_SYNONYMS } from '../utils';
 
 const FAMILY_CHILDREN_FIELDS: FieldDefinition[] = [
   // Parent
   { field: 'parentName', required: true, label: 'Parent Name' },
   { field: 'parentEmail', required: true, label: 'Parent Email' },
   { field: 'parentPhone', required: false, label: 'Parent Phone' },
-  { field: 'parentPassword', required: true, label: 'Parent Password' },
+  { field: 'parentPassword', required: false, label: 'Parent Password' },
   // Child
   { field: 'childName', required: true, label: 'Child Name' },
   { field: 'dateOfBirth', required: true, label: 'Date of Birth' },
@@ -69,6 +65,7 @@ export class FamilyChildrenImportService {
     buffer: Buffer,
     orgId: string,
     mappings: ConfirmedMapping[],
+    defaultPassword?: string,
   ): Promise<FamilyChildrenImportSummary> {
     const { rows } = await this.parser.parseBuffer(buffer);
     const mapped = this.parser.applyMappings(rows, mappings);
@@ -149,17 +146,11 @@ export class FamilyChildrenImportService {
             continue;
           }
           try {
-            const password = this.str(row['parentPassword']);
-            const passwordError = validateImportPassword(
-              password,
-              rowNum,
-              'parentPassword',
-            );
-            if (passwordError) {
-              summary.errors.push(passwordError);
-              continue;
-            }
-            const passwordHash = await bcrypt.hash(password!, 12);
+            const password =
+              this.str(row['parentPassword']) ||
+              defaultPassword ||
+              'CogniCare2026!';
+            const passwordHash = await bcrypt.hash(password, 12);
             const newUser = await this.userModel.create({
               fullName: parentName,
               email: parentEmail,
@@ -291,6 +282,9 @@ export class FamilyChildrenImportService {
       femme: 'female',
       feminin: 'female',
       انثى: 'female',
+      other: 'other',
+      autre: 'other',
+      اخر: 'other',
     };
     return aliases[cleaned] ?? null;
   }

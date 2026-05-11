@@ -23,6 +23,7 @@ import {
   CancelAppointmentDto,
   CompleteAppointmentDto,
   CreateAppointmentDto,
+  CreateBabysittingAppointmentDto,
   RateAppointmentDto,
 } from './dto/create-appointment.dto';
 import type { AppointmentStatus } from './schemas/appointment.schema';
@@ -42,6 +43,21 @@ export class AppointmentsController {
     @Body() dto: CreateAppointmentDto,
   ): Promise<unknown> {
     return this.appointmentsService.createAppointment(
+      req.user.id,
+      req.user.email,
+      req.user.fullName ?? req.user.email,
+      dto,
+    );
+  }
+
+  /** Book a babysitting appointment directly (without consultation slot) */
+  @Post('babysitting')
+  @ApiOperation({ summary: 'Book a babysitting appointment (family role)' })
+  async createBabysitting(
+    @Request() req: { user: { id: string; email: string; fullName?: string } },
+    @Body() dto: CreateBabysittingAppointmentDto,
+  ): Promise<unknown> {
+    return this.appointmentsService.createBabysittingAppointment(
       req.user.id,
       req.user.email,
       req.user.fullName ?? req.user.email,

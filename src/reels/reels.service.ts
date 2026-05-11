@@ -846,18 +846,4 @@ export class ReelsService {
     });
     return !!engagement;
   }
-
-  /**
-   * Get user engagement state for a reel (liked, saved)
-   */
-  async getUserEngagements(
-    reelId: string,
-    userId: string,
-  ): Promise<{ liked: boolean; saved: boolean }> {
-    const [liked, saved] = await Promise.all([
-      this.hasUserLiked(reelId, userId),
-      this.hasUserSaved(reelId, userId),
-    ]);
-    return { liked, saved };
-  }
 }

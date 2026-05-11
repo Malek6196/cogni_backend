@@ -138,6 +138,105 @@ export class AppointmentsService {
     return formatted;
   }
 
+  /** Book a babysitting appointment directly (without consultation slot) */
+  async createBabysittingAppointment(
+    userId: string,
+    userEmail: string,
+    userFullName: string,
+    dto: any, // CreateBabysittingAppointmentDto
+  ): Promise<any> {
+    // Validate caregiver exists
+    const caregiverId = dto.caregiverId;
+    if (!Types.ObjectId.isValid(caregiverId)) {
+      throw new BadRequestException('Invalid caregiver ID');
+    }
+
+    // Resolve child if provided
+    let childId: Types.ObjectId | undefined;
+    let childName: string | undefined;
+
+    if (dto.childId) {
+      const child = await this.childModel
+        .findById(dto.childId)
+        .select('parentId fullName')
+        .lean()
+        .exec();
+      if (!child) throw new NotFoundException('Child not found');
+      const parentId = (child as unknown as { parentId?: Types.ObjectId })
+        .parentId;
+      if (!parentId || parentId.toString() !== userId) {
+        throw new ForbiddenException('You can only book for your own child');
+      }
+      childId = (child as unknown as { _id?: Types.ObjectId })._id;
+      childName =
+        dto.childName != null && dto.childName.trim().length > 0
+          ? dto.childName.trim()
+          : ((child as unknown as { fullName?: string }).fullName ?? undefined);
+    } else {
+      childName =
+        dto.childName != null && dto.childName.trim().length > 0
+          ? dto.childName.trim()
+          : undefined;
+    }
+
+    const bookingRef = await this.generateBookingRef();
+
+    const doc = await this.appointmentModel.create({
+      userId: new Types.ObjectId(userId),
+      providerId: new Types.ObjectId(caregiverId),
+      consultationType: 'babysitting',
+      status: 'pending', // Babysitting starts as pending, needs caregiver confirmation
+      date: dto.date,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      reason: 'Babysitting / Garde d\'enfant',
+      preferredLanguage: 'fr',
+      notes: dto.notes,
+      childId,
+      childName,
+      mode: 'in_person',
+      bookingRef,
+      confirmationSent: false,
+    });
+
+    const populated = await this.appointmentModel
+      .findById(doc._id)
+      .populate('providerId', 'fullName profilePic email')
+      .lean();
+
+    const formatted = this.formatAppointment(populated);
+
+    // Send notifications
+    void Promise.allSettled([
+      this.notificationsService.createForUser(userId, {
+        type: 'appointment_confirmed',
+        title: 'Demande de babysitting envoyée',
+        description: `Votre demande de babysitting pour le ${dto.date} à ${dto.startTime} a été envoyée. Réf: ${bookingRef}`,
+        data: { appointmentId: doc._id.toString(), bookingRef },
+      }),
+      this.notificationsService.createForUser(caregiverId, {
+        type: 'appointment_new',
+        title: 'Nouvelle demande de babysitting',
+        description:
+          childName != null && childName.length > 0
+            ? `${userFullName} demande un babysitting pour ${childName} le ${dto.date} de ${dto.startTime} à ${dto.endTime}`
+            : `${userFullName} demande un babysitting le ${dto.date} de ${dto.startTime} à ${dto.endTime}`,
+        data: {
+          appointmentId: doc._id.toString(),
+          bookingRef,
+          childId: childId?.toString(),
+          childName,
+          requesterName: userFullName,
+        },
+      }),
+      this.appointmentModel.findByIdAndUpdate(doc._id, {
+        confirmationSent: true,
+      }),
+    ]);
+
+    return formatted;
+  }
+
   private async resolveBookedChild(
     userId: string,
     dto: CreateAppointmentDto,

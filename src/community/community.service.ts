@@ -93,7 +93,6 @@ export class CommunityService {
     id: string;
     authorName: string;
     authorId: string;
-    authorProfilePic?: string | null;
     text: string;
     createdAt: string;
     imageUrl?: string;
@@ -101,10 +100,7 @@ export class CommunityService {
     likeCount: number;
   }> {
     const uid = this.normalizeUserId(userId);
-    const user = await this.userModel
-      .findById(uid)
-      .select('fullName profilePic')
-      .exec();
+    const user = await this.userModel.findById(uid).select('fullName').exec();
     if (!user) throw new NotFoundException('User not found');
 
     const post = new this.postModel({
@@ -121,7 +117,6 @@ export class CommunityService {
       id: post._id.toString(),
       authorId: post.authorId.toString(),
       authorName: post.authorName,
-      authorProfilePic: (user as any).profilePic ?? null,
       text: post.text,
       createdAt: post.createdAt!.toISOString(),
       imageUrl: post.imageUrl,
